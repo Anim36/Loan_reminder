@@ -35,11 +35,13 @@ import { useToast } from "@/components/ui/toast-provider";
 import { Modal } from "@/components/ui/modal";
 import { CardHeading, FieldLabel } from "@/components/layout/text";
 import { PageHeader } from "@/components/layout/page-header";
+import { useSessionUser } from "@/hooks/use-session-user";
 import {
+  changePassword as changePasswordApi,
+  deleteAccount as deleteAccountApi,
   signOut,
-  useUserSettings,
-  type ThemeChoice,
-} from "@/services";
+} from "@/services/authService";
+import { useUserSettings, type ThemeChoice } from "@/services";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -52,11 +54,32 @@ export default function SettingsPage() {
     updateTheme: saveTheme,
     updateBanglaNumerals,
     updateNotificationPrefs,
-    changePassword,
-    deleteAccount,
   } = useUserSettings();
   const { t, setLang } = useT();
   const uiLang = useLang();
+  const { user: sessionUser } = useSessionUser();
+
+  // ---- Session-derived profile (the source of truth) -----------------
+  // `useUserSettings` still owns the localStorage copy, but the
+  // user's *real* name and email live on the server. We prefer
+  // the session value when the localStorage copy is the demo
+  // seed ("Ayesha" / "ayesha@example.com") OR matches the
+  // session — i.e. when there's no user-edited override. Once
+  // the user saves a new value it persists in localStorage and
+  // we read it from there.
+  const sessionName = sessionUser?.name ?? null;
+  const sessionEmail = sessionUser?.email ?? null;
+  const isDemoSeed =
+    settings.displayName === "Ayesha" &&
+    settings.email === "ayesha@example.com";
+  const profileName =
+    sessionName && (isDemoSeed || settings.displayName === sessionName)
+      ? sessionName
+      : settings.displayName;
+  const profileEmail =
+    sessionEmail && (isDemoSeed || settings.email === sessionEmail)
+      ? sessionEmail
+      : settings.email;
 
   // ---- Profile zod schema (i18n keys) -----------------------------------
   const profileSchema = z.object({
@@ -116,9 +139,9 @@ export default function SettingsPage() {
   //
   // `seeded` is the ref-based "have we copied from the server yet"
   // signal; once the user types into a field we never overwrite it.
-  const [name2, setName2] = useState(settings.displayName);
+  const [name2, setName2] = useState(profileName);
   const [phone, setPhone] = useState(settings.phone);
-  const [email, setEmail] = useState(settings.email);
+  const [email, setEmail] = useState(profileEmail);
   const [profileErrors, setProfileErrors] = useState<{
     displayName?: string;
     phone?: string;
@@ -143,14 +166,14 @@ export default function SettingsPage() {
   // [React-recommended](https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes)
   // way to do this without triggering the "setState in effect" rule.
   if (ready) {
-    if (!userTouched.name && name2 !== settings.displayName) {
-      setName2(settings.displayName);
+    if (!userTouched.name && name2 !== profileName) {
+      setName2(profileName);
     }
     if (!userTouched.phone && phone !== settings.phone) {
       setPhone(settings.phone);
     }
-    if (!userTouched.email && email !== settings.email) {
-      setEmail(settings.email);
+    if (!userTouched.email && email !== profileEmail) {
+      setEmail(profileEmail);
     }
   }
 
@@ -222,7 +245,7 @@ export default function SettingsPage() {
     setPwErrors({});
     setPwBusy(true);
     try {
-      await changePassword({
+      await changePasswordApi({
         current: result.data.currentPassword,
         next: result.data.newPassword,
       });
@@ -252,7 +275,7 @@ export default function SettingsPage() {
   async function handleDeleteAccount() {
     setDeleteBusy(true);
     try {
-      await deleteAccount();
+      await deleteAccountApi();
       setDeleteOpen(false);
       toast.show(t["settings.accountDeleted"]);
       router.push("/login");

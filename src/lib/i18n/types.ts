@@ -47,6 +47,7 @@ export interface Dictionary {
   "auth.passwordReset": string;
   "auth.passwordResetSub": string;
   "auth.privacyNotice": string;
+  "auth.rateLimited": string;
   "auth.resend": string;
   "auth.resendHint": string;
   "auth.resetSent": string;
@@ -58,6 +59,7 @@ export interface Dictionary {
   "auth.signUpFailed": string;
   "auth.signUpSubtitle": string;
   "auth.signUpTitle": string;
+  "auth.tokenInvalid": string;
   "auth.tokenMissingBody": string;
   "auth.tokenMissingTitle": string;
   "auth.updating": string;

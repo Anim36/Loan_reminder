@@ -2,21 +2,17 @@
 
 A friendly lending companion for friends and family. Track loans you have
 given out, schedule reminders, and keep a clear record of who owes you
-what — all from a single dashboard.
+what â€” all from a single dashboard.
 
-This repository ships the **frontend** (Next.js App Router + React 19).
-Every piece of data the UI consumes flows through `src/services` so the
-app can run in one of two modes:
+This repository ships the **full app** (Next.js App Router + React 19 + Auth.js v5 + Prisma + PostgreSQL). Authentication, user preferences, and rate limiting are all real; no separate backend service is required.
+Every piece of data the UI consumes flows through `src/services`.
 
-- **Prototype mode** — `NEXT_PUBLIC_API_URL` is empty. The services keep
-  data in `localStorage` and return the demo seeds on first load. No
-  server required.
-- **Live mode** — `NEXT_PUBLIC_API_URL` points at a real backend. The
-  same service functions hit the HTTP endpoints described in
-  [API contract](#api-contract).
-
-The two modes are interchangeable: a single env variable swap moves the
-app from one to the other.
+- **Loans / friends / reminders / notifications** are still stored in
+  the browser's `localStorage` for the prototype; wiring them to the
+  database is a follow-up.
+- **Auth, profile, language, theme, and the Bangla-numerals flag** are
+  stored in the database via `User` and `Account` rows (see
+  [Authentication](#authentication)).
 
 ---
 
@@ -30,13 +26,27 @@ npm install
 
 ### 2. Configure
 
-Copy the example env file and fill in your backend URL when you have one:
+Copy the example env file and fill in the values you need:
 
 ```bash
 cp .env.example .env.local
 ```
 
-Leave `NEXT_PUBLIC_API_URL=` blank to run in prototype mode.
+The required keys for a working dev setup are:
+
+| Variable                       | Purpose                                                                                              |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                 | PostgreSQL connection string used by Prisma. `db:start` sets up an embedded instance on port 55432.  |
+| `DIRECT_URL`                   | Non-pooled connection for `prisma migrate deploy` / `prisma db seed`. Same value as `DATABASE_URL` is fine. |
+| `AUTH_SECRET`                  | Random 32-byte secret for signing Auth.js JWTs. Generate with `openssl rand -base64 32`.             |
+| `AUTH_URL`                     | Canonical site URL (no trailing slash). Defaults to `http://localhost:3000` if empty.                 |
+| `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` | Optional. Leave both empty to hide the "Continue with Google" button.                       |
+| `RESEND_API_KEY`               | Optional. When set, password-reset emails go through Resend. When empty, the reset link is logged to the server console. |
+| `EMAIL_FROM`                   | Sender address (must be a verified Resend sender).                                                  |
+| `SMS_PROVIDER`                 | `mock` to skip network calls; future: `bulksms`, `twilio`.                                          |
+
+`AUTH_SECRET` is required in production; Auth.js will refuse to start
+without it. `.env.example` ships with a placeholder for development.
 
 ### 3. Run
 
@@ -53,6 +63,42 @@ npm run build   # production build (runs typecheck)
 npm run lint    # eslint
 npm run start   # serve the production build
 ```
+
+### 5. Database (Prisma + Postgres)
+
+The app ships with a real database layer (Prisma + PostgreSQL).
+The dev workflow uses an embedded Postgres on `127.0.0.1:55432`
+and seeds a demo user on first run:
+
+```bash
+npm run db:start    # leave this terminal open - embedded Postgres
+npm run db:migrate  # in another terminal - pushes the schema
+npm run db:seed     # inserts the demo data (Ayesha + 6 friends + loans)
+```
+
+For production, point `DATABASE_URL` (and optionally `DIRECT_URL`) at
+a managed Postgres instance and run the same scripts; `db:start` is
+a no-op when `DATABASE_URL` is set in `.env.local`.
+
+### 6. Demo account (development only)
+
+`npm run db:seed` creates a single demo user:
+
+| Field    | Value                |
+| -------- | -------------------- |
+| Email    | `ayesha@example.com` |
+| Password | `LoanDemo!23`        |
+
+> WARNING: This is a **development-only** credential. The password
+> is hard-coded in `prisma/seed.ts` and must never be reused in
+> production. Change it (or remove the seed user entirely) before
+> shipping.
+
+The seed is idempotent: it only deletes rows owned by the demo
+user, so re-running `npm run db:seed` will not wipe any real
+users that have signed up. If you want a clean slate, use
+`npm run db:reset` (this **deletes every row in the database**
+— only run it on a local dev database).
 
 ---
 
@@ -77,19 +123,19 @@ src/
     not-found.tsx          # 404
     loading.tsx            # Global loading skeleton
   components/
-    ui/                    # Atomic UI primitives (button, input, chip…)
+    ui/                    # Atomic UI primitives (button, input, chipâ€¦)
     layout/                # Sidebar, TopBar, BottomTabBar
     forms/                 # Shared LoanForm
     auth/                  # AuthCard used by /login and /signup
     marketing/             # Landing-page sections
-  services/                # Data access — every page imports from here
+  services/                # Data access â€” every page imports from here
     loanService.ts
     reminderService.ts
     authService.ts
     use-loans.ts           # Client hook over loanService
     use-reminder-settings.ts
     index.ts
-  types/                   # Shared TS types (Loan, Friend, Reminder…)
+  types/                   # Shared TS types (Loan, Friend, Reminderâ€¦)
   data/                    # Seed data (used in prototype mode)
   lib/                     # Pure helpers
     api.ts                 # Typed fetch wrapper (see below)
@@ -106,258 +152,126 @@ tailwind config is in src/app/globals.css (Tailwind v4 inline theme).
 ### How data flows
 
 ```
-UI component ──▶ @/services/loanService (async) ──▶ @/lib/api (fetch)
-                                                      │
-                                                      ▼
-                                          Backend OR localStorage
-                                                      │
-                                                      ▼
-                                            use-loans hook re-renders
+UI component â”€â”€â–¶ @/services/*Service (async)
+                       â”‚
+                       â”œâ”€â–▶ /api/auth/*      â†’ Postgres (Auth.js + Prisma)
+                       â””â”€â–▶ @/lib/storage    â†’ localStorage (loans, friends,
+                                              reminders, notifications)
+                                  â”‚
+                                  â–¼
+                            use-* hook re-renders
 ```
 
 Every service function is `async` and returns typed data. UI code is
-identical in both modes; only the env variable changes.
+identical across services â”€ the only thing that changes is which
+storage adapter the service uses.
+See [Authentication](#authentication) for the real auth / profile / preferences
+wiring.
 
 ---
 
-## The fetch wrapper (`src/lib/api.ts`)
+## Authentication
 
-Single point of contact with the backend. Highlights:
+Auth is wired with [Auth.js (NextAuth) v5](https://authjs.dev) and the
+[Prisma adapter](https://authjs.dev/getting-started/adapters/prisma).
+Everything lives in this repo â€” there is no separate auth service.
 
-- Reads `NEXT_PUBLIC_API_URL` once at module load; trims a trailing
-  slash. When the variable is empty, `API_ENABLED` is `false` and every
-  service falls back to its local store.
-- Attaches `Authorization: Bearer <token>` from `src/lib/auth.ts` to
-  every request (set by `authService.signIn` / `signUp`).
-- Sends `Content-Type: application/json` and `Accept: application/json`
-  on every JSON request/response.
-- Sends `Idempotency-Key` for non-GET / non-DELETE writes when the
-  caller provides one.
-- 30 second default timeout, cancelable via the standard
-  `AbortSignal` you pass in the options bag.
-- Throws `ApiError` (extends `Error`) with `status`, `code`, `details`,
-  and the parsed body for any non-2xx response.
+### Strategy
 
-Convenience helpers:
+- **Session strategy: JWT** (`src/server/auth.ts`). The Credentials
+  provider requires the JWT strategy in v5 (the database strategy
+  only supports OAuth providers). The Prisma adapter is still used
+  for the `User` / `Account` / `Session` / `VerificationToken` tables
+  so OAuth flows get full account linking. The JWT is signed with
+  `AUTH_SECRET` and stored in a `httpOnly`, `sameSite=lax` cookie
+  (`__Secure-authjs.session-token` in production,
+  `authjs.session-token` locally).
+- **Two providers**:
+  - **Credentials** (email + password) â€” always registered.
+    Passwords are hashed with `bcryptjs` at cost 12. The
+    `authorize` callback runs a throwaway `bcrypt.compare` against a
+    dummy hash when the user does not exist so missing-user and
+    wrong-password timings stay comparable.
+  - **Google OAuth** â€” only registered when **both**
+    `AUTH_GOOGLE_ID` *and* `AUTH_GOOGLE_SECRET` are set. The login
+    page also calls `/api/auth/google-enabled` on mount and hides
+    the "Continue with Google" button when the endpoint returns
+    `false`, so we never show an option the server cannot honour.
+- **Token invalidation on password change.** Every time the password
+  is updated (Settings > Security, or the forgot-password flow),
+  `User.tokenVersion` is incremented. The `jwt` callback re-reads
+  the row on every request; if the JWT's `tokenVersion` lags the
+  DB, the token is dropped and the user is silently signed out.
+  This is the JWT analogue of "log out everywhere".
+- **Cookies** are `httpOnly` + `sameSite=lax` + `secure` in
+  production. Auth.js's defaults are overridden explicitly so a
+  future library upgrade cannot accidentally relax them.
 
-| Helper    | Method   | Notes                                     |
-| --------- | -------- | ----------------------------------------- |
-| `apiGet`    | GET      | `apiGet<T>(path, opts?)`                    |
-| `apiPost`   | POST     | `apiPost<T>(path, body?, opts?)`            |
-| `apiPut`    | PUT      | `apiPut<T>(path, body?, opts?)`             |
-| `apiPatch`  | PATCH     | `apiPatch<T>(path, body?, opts?)`           |
-| `apiDelete` | DELETE   | `apiDelete<T>(path, opts?)`                 |
-| `request`   | any      | Low-level escape hatch                     |
+### Rate limiting
 
----
+Login, signup, forgot-password, and reset-password are throttled by
+`src/server/rate-limit.ts` â€” a small in-memory sliding-window limiter
+(`5 attempts per 15 minutes`, keyed by `action:ip:email`). The
+limiter is a single `Map` so a Redis swap is a one-file change. A
+429 response is translated to the dictionary key `auth.rateLimited`.
 
-## API contract
+### Auth API routes
 
-This is the HTTP contract the backend is expected to expose. Paths are
-relative to `NEXT_PUBLIC_API_URL`. All bodies are JSON. All requests
-with bodies are `Content-Type: application/json`. Every successful
-response is JSON unless noted.
+All routes are JSON, return `{ ok: true, ... }` on success, and a
+`{ ok: false, error: "<code>", retryAfterMs? }` on failure.
 
-Errors follow a uniform shape so the UI can pull `message`, `details`,
-and a machine-readable `code`:
+| Method | Path                              | Purpose                                                   |
+| ------ | --------------------------------- | --------------------------------------------------------- |
+| POST   | `/api/auth/signup`                | Create user + default `ReminderSettings` row + auto sign-in. Zod-validates `{ name, email, password }`. |
+| POST   | `/api/auth/[...nextauth]`         | Auth.js's own handlers (sign-in, sign-out, callback).     |
+| GET    | `/api/auth/google-enabled`        | `{ enabled: boolean }`. Login/signup pages hide the button when this returns `false`. |
+| POST   | `/api/auth/forgot-password`       | Always returns `{ ok: true }` (no enumeration). Emails a single-use reset link when the account exists; only the SHA-256 hash is stored in `PasswordResetToken`. |
+| POST   | `/api/auth/reset-password`        | Validates the token, hashes the new password, marks the token used, bumps `User.tokenVersion`. |
+| PATCH  | `/api/auth/me`                    | Update the signed-in user (`name`, `phone`, `language`, `theme`, `banglaNumerals`). All fields optional. |
+| POST   | `/api/settings/password`          | Change password (current + new). Bumps `User.tokenVersion` on success. |
+| POST   | `/api/settings/delete-account`    | Delete every row owned by the user in a single transaction, then sign out. |
 
-```jsonc
-{
-  "code": "loan_not_found",      // optional, machine-readable
-  "message": "Loan 42 not found", // safe to display to the user
-  "details": { "field": "msg" }  // optional, zod-style field map
-}
-```
+### Shared helpers
 
-### Auth
+- `requireUser()` (`src/server/auth-helpers.ts`) is the single
+  entry point every protected API route uses. It calls `auth()`,
+  returns the user (id, email, name, image, language, theme,
+  banglaNumerals, tokenVersion) on success, or a
+  `NextResponse(401)` so the caller can `return auth.response` in
+  one line.
+- `useSessionUser()` (`src/hooks/use-session-user.ts`) is the
+  matching client-side helper. It wraps `next-auth/react`'s
+  `useSession`, normalises the shape, and returns the avatar
+  initial ready for `<Avatar name={...} />`.
 
-| Method | Path             | Auth | Request body                  | Response (200)                                  |
-| -------- | ---------------- | ---- | ----------------------------- | --------------------------------------------- |
-| `POST`   | `/auth/register` | —    | `{ name, email, password }`    | `{ token: string, user: AuthUser }`            |
-| `POST`   | `/auth/login`    | —    | `{ email, password }`          | `{ token: string, user: AuthUser }`            |
-| `POST`   | `/auth/logout`   | ✅   | `{}` *(or no body)*             | `204 No Content`                                |
-| `GET`    | `/auth/me`       | ✅   | —                             | `AuthUser`                                     |
+### Routing
 
-`AuthUser`:
+`src/proxy.ts` is a Next 16 `proxy.ts` (the renamed `middleware`).
+It runs before every page render and:
 
-```ts
-interface AuthUser {
-  id: string;
-  email: string;
-  name?: string;
-}
-```
+- Redirects unauthenticated users away from `/dashboard`, `/loans`,
+  `/friends`, `/reminders`, `/notifications`, `/reports`, `/settings`
+  â†’ `/login?callbackUrl=<original>`.
+- Redirects already-signed-in users away from `/login`, `/signup`,
+  `/forgot-password`, `/reset-password` â†’ `/dashboard` (or the
+  `callbackUrl` if it is a same-origin path).
+- Leaves marketing, legal, and `/api/*` alone.
 
-The token returned by `/auth/login` and `/auth/register` is sent on
-every subsequent request as `Authorization: Bearer <token>`. The
-frontend stores it in `localStorage` under
-`loan-reminder:auth-token:v1`.
+The proxy checks for the presence of an auth cookie only â€” it does
+not verify the JWT. Full verification happens in the `(app)/layout`
+and every protected API route via `requireUser()`.
 
-### Loans
+### Security notes
 
-| Method  | Path                       | Auth | Request body                        | Response (200)                       |
-| -------- | -------------------------- | ---- | ----------------------------------- | ------------------------------------ |
-| `GET`    | `/loans`                   | ✅   | —                                   | `Loan[]`                              |
-| `GET`    | `/loans/:id`               | ✅   | —                                   | `Loan`                                |
-| `POST`   | `/loans`                   | ✅   | `CreateLoanBody` *(see below)*        | `Loan` *(server-assigned id, status, timestamps)* |
-| `PATCH`  | `/loans/:id`               | ✅   | `Partial<UpdateLoanBody>`           | `Loan`                                |
-| `DELETE` | `/loans/:id`               | ✅   | —                                   | `204 No Content`                     |
-| `POST`   | `/loans/:id/pay`           | ✅   | `{}` *(or no body)*                  | `Loan` *(status flipped to "Paid", `paidAt` set)* |
-
-#### Loan shape
-
-```ts
-interface Loan {
-  id: string;
-  friend: Friend;
-  amount: number;             // BDT (৳)
-  dateGiven: string;         // ISO date  YYYY-MM-DD
-  dueDate: string;           // ISO date  YYYY-MM-DD
-  tone: "Friendly" | "Neutral" | "Firm";
-  reminders: { sms: boolean; email: boolean };
-  note?: string;
-  consent: boolean;
-  status: "Paid" | "Pending" | "Overdue";
-  paidAt?: string;           // ISO timestamp
-  createdAt: string;         // ISO timestamp
-  updatedAt: string;         // ISO timestamp
-}
-
-interface Friend {
-  id: string;
-  name: string;
-  /** National digits only — the "+880" prefix is implied. */
-  phone?: string;
-  email?: string;
-}
-```
-
-`CreateLoanBody` is `Loan` minus `id`, `status`, `createdAt`,
-`updatedAt` (the server fills these in). `updateLoan` is a PATCH so any
-subset of fields is acceptable.
-
-`status` is server-computed: a loan is `Overdue` when `dueDate < today`
-and `status !== "Paid"`, `Pending` while not yet paid and not yet
-overdue, and `Paid` after `/loans/:id/pay` (or any PATCH that sets
-`status: "Paid"`). Clients should treat the server value as canonical.
-
-#### Validation (suggested)
-
-The frontend validates with zod before sending. The backend should
-mirror the same rules so the error messages stay in sync:
-
-- `friend.name` — required, non-empty.
-- `friend.phone` — when present, must match `^1[3-9]\d{8}$`
-  (national digits; the `+880` prefix is added by the UI).
-- `friend.email` — when present, must be RFC-5322 valid.
-- `amount` — must be `> 0`.
-- `dueDate` — must be strictly after `dateGiven`.
-
-Field errors should be returned as `details: { phone: "..." }`.
-
-### Reminder settings
-
-| Method | Path                            | Auth | Request body               | Response (200)       |
-| ------ | ------------------------------- | ---- | -------------------------- | -------------------- |
-| `GET`    | `/settings`                   | ✅   | —                          | `ReminderSettings`   |
-| `PUT`    | `/settings`                   | ✅   | `ReminderSettings`          | `ReminderSettings`   |
-| `PATCH`  | `/settings/tone`               | ✅   | `{ tone: Tone }`            | `ReminderSettings`   |
-| `PATCH`  | `/settings/templates/:tone`    | ✅   | `Partial<ToneTemplates>`    | `ReminderSettings`   |
-| `PATCH`  | `/settings/channels`           | ✅   | `Partial<ChannelDefaults>`   | `ReminderSettings`   |
-
-```ts
-type Tone = "Friendly" | "Neutral" | "Firm";
-
-interface ToneTemplates {
-  sms: string;
-  emailSubject: string;
-  email: string;
-}
-
-interface ChannelDefaults {
-  sms: boolean;
-  email: boolean;
-  threeDaysBefore: boolean;
-  onDueDate: boolean;
-  everyTwoDaysAfterOverdue: boolean;
-}
-
-interface ReminderSettings {
-  tone: Tone;
-  templates: Record<Tone, ToneTemplates>;
-  channels: ChannelDefaults;
-}
-```
-
-`/settings` returns `404` when the user has no settings row yet — the
-frontend treats that as "use defaults".
-
-### Reminders (sent)
-
-Reserved for the upcoming reminder-delivery surface. The current UI
-shows a static "Reminder history" list driven by `Loan.reminders`. When
-the backend starts scheduling real sends, the following endpoints will
-back that history list:
-
-| Method | Path                              | Auth | Request body | Response (200) |
-| ------ | --------------------------------- | ---- | ------------ | -------------- |
-| `GET`    | `/loans/:id/reminders`           | ✅   | —            | `Reminder[]`   |
-| `POST`   | `/loans/:id/reminders` *(send now)* | ✅   | `{ tone?, channels? }` | `Reminder` |
-
-```ts
-interface Reminder {
-  id: string;
-  loanId: string;
-  scheduledFor: string;     // ISO timestamp
-  sentAt?: string;          // ISO timestamp
-  tone: Tone;
-  channel: "SMS" | "Email";
-  status: "Scheduled" | "Sent" | "Failed";
-}
-```
-
-### Error envelope
-
-All non-2xx responses must return `ApiErrorBody`:
-
-```ts
-interface ApiErrorBody {
-  code?: string;                       // e.g. "loan_not_found"
-  message?: string;                    // user-safe message
-  details?: Record<string, string>;    // optional field errors
-}
-```
-
-The frontend's `ApiError` class exposes `status`, `code`, `details`,
-and `body` so call sites can render per-field errors.
-
----
-
-## CORS & auth headers
-
-The backend must allow:
-
-- `Origin` matching the deployed frontend (configure per environment).
-- `Methods`: `GET, POST, PUT, PATCH, DELETE, OPTIONS`.
-- `Headers`: `Authorization, Content-Type, Accept, Idempotency-Key`.
-- `Credentials`: optional — the token is sent in `Authorization`, not a
-  cookie, so CORS does not need `credentials: true`.
-
-Preflight (`OPTIONS`) responses must include the same headers and a
-`max-age` of at least 600 seconds.
-
----
-
-## Notes for future work
-
-- `src/services/loanService.ts` currently handles "create / update /
-  delete" by writing to `localStorage`. The API call shape is already
-  in place; turning it on is a one-line `process.env` flip.
-- `Idempotency-Key` is set when the UI retries a POST/PUT/PATCH after a
-  network blip. The backend should honour the standard: the same key +
-  same body returns the same response; the same key + a different body
-  returns `409 Conflict`.
-- `useLoans` (`src/services/use-loans.ts`) subscribes to a `loans:change`
-  event today. When wired to a live API it can keep the same contract by
-  re-fetching after every mutation instead of reading from
-  `localStorage`.
+- Failed login and the "user does not exist" path both run
+  `bcrypt.compare` against a real or dummy hash, so the timing
+  difference between "email found" and "email not found" is in the
+  noise.
+- Email addresses are normalised (trim + lowercase) on every
+  write and read; the column is `UNIQUE` on the normalised form.
+- Passwords are never logged, never printed, and never returned
+  in any response. The reset token is emailed in plaintext but
+  only its SHA-256 hash is stored, with a 30-minute TTL.
+- "Logged out everywhere" is achieved by bumping
+  `User.tokenVersion` (one column increment, no session table
+  maintenance).

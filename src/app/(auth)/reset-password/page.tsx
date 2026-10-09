@@ -22,7 +22,7 @@ import {
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { AuthToolbar } from "@/components/auth/auth-toolbar";
-import { resetPassword } from "@/services/authService";
+import { resetPassword, AuthError } from "@/services/authService";
 import { useT } from "@/lib/i18n/LanguageProvider";
 
 function buildSchema(t: ReturnType<typeof useT>["t"]) {
@@ -71,9 +71,20 @@ function ResetPasswordInner() {
       });
       setDone(true);
     } catch (err) {
-      setErrors({
-        newPassword: err instanceof Error ? err.message : t["app.error.body"],
-      });
+      const code = err instanceof AuthError ? err.code : null;
+      let msg: string;
+      if (code === "invalid_token") {
+        msg = t["auth.tokenInvalid"];
+      } else if (code === "password_too_short") {
+        msg = t["settings.passwordTooShort"];
+      } else if (code === "rate_limited") {
+        msg = t["auth.rateLimited"];
+      } else if (err instanceof Error) {
+        msg = err.message;
+      } else {
+        msg = t["app.error.body"];
+      }
+      setErrors({ newPassword: msg });
       setSubmitting(false);
     }
   }

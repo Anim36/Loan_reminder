@@ -19,7 +19,7 @@ import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast-provider";
 import { AuthToolbar } from "@/components/auth/auth-toolbar";
-import { forgotPassword } from "@/services/authService";
+import { forgotPassword, AuthError } from "@/services/authService";
 import { useT } from "@/lib/i18n/LanguageProvider";
 
 // `t` is the dictionary callable; we read the email error message
@@ -53,7 +53,14 @@ export default function ForgotPasswordPage() {
       const res = await forgotPassword({ email: result.data.email });
       setSentTo(res.email);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t["app.error.body"]);
+      const code = err instanceof AuthError ? err.code : null;
+      if (code === "rate_limited") {
+        setError(t["auth.rateLimited"]);
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError(t["app.error.body"]);
+      }
       setSubmitting(false);
     }
   }

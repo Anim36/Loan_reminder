@@ -1,0 +1,371 @@
+// Prisma schema for the Loan Reminder app.
+//
+// Conventions
+// ============
+// 1. Money: every monetary amount is stored as `Int` in *poisha* (BDT x
+//    100). The frontend works in taka, so the API layer converts at the
+//    boundary (`lib/money.ts`).
+// 2. Dates: business dates (dateGiven, dueDate, paymentDate) are
+//    `@db.Date` (date-only, no time). Audit fields (createdAt, paidAt,
+//    sentAt, changedAt) are UTC `@db.Timestamptz`.
+// 3. User identity: `User.id` is a `cuid()`. The frontend's auth
+//    payload (`AuthUser.id`) is whatever the backend issues here.
+// 4. Soft delete: `Loan.deletedAt` is the only soft delete in the
+//    schema. Every read filters `deletedAt = null` so the frontend
+//    never sees a deleted loan.
+// 5. Cascade: every child row that belongs to a `User` cascades on
+//    delete. Friend, Loan, ReminderSettings, ReminderLog, Notification,
+//    PasswordResetToken.
+// 6. Indexes: anything the dashboard / reports query by (userId,
+//    dueDate, scheduledFor, etc.) is indexed explicitly below.
+//
+// The schema is intentionally normalized: payments, reschedules and
+// reminder logs live in their own tables so a loan can have an
+// arbitrary number of each. Money derivation (status, amountPaid,
+// remaining) is computed on the server by `lib/loanStatus.ts`, never
+// stored.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Auth.js (NextAuth) models. Mirrors the Prisma Adapter schema
+// (https://authjs.dev/getting-started/adapters/prisma). Used only when
+// the app is running in live mode and the user signs in via an OAuth
+// provider or magic link. Email/password is handled separately by
+// `User.passwordHash`.
+// ─────────────────────────────────────────────────────────────────────
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime @db.Timestamptz(6)
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// User
+// ─────────────────────────────────────────────────────────────────────
+
+enum UiLanguage {
+  en
+  bn
+}
+
+enum ThemeChoice {
+  light
+  dark
+  system
+}
+
+model User {
+  id                String    @id @default(cuid())
+  name              String
+  email             String    @unique
+  emailVerified     DateTime? @db.Timestamptz(6)
+  phone             String?
+  image             String?
+  passwordHash      String?   @db.Text
+  // Bumped every time the password changes (or the user explicitly
+  // logs out everywhere). The Auth.js JWT carries a copy of this
+  // value; the callback rejects tokens whose copy is stale, which
+  // invalidates the user's other sessions without a session table.
+  tokenVersion      Int       @default(0)
+  language          UiLanguage @default(en)
+  theme             ThemeChoice @default(light)
+  banglaNumerals    Boolean   @default(false)
+  createdAt         DateTime  @default(now()) @db.Timestamptz(6)
+
+  accounts           Account[]
+  sessions           Session[]
+  friends            Friend[]
+  loans              Loan[]
+  reminderSettings   ReminderSettings?
+  notifications      Notification[]
+  passwordResetTokens PasswordResetToken[]
+
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Password reset
+// ─────────────────────────────────────────────────────────────────────
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  // Hashed token — the plaintext goes into the email. Lookup is by
+  // token hash, not plaintext, so a DB leak doesn't grant reset
+  // access.
+  tokenHash String   @unique
+  expiresAt DateTime @db.Timestamptz(6)
+  usedAt    DateTime? @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Friend
+//
+// The "friends" list is owned by the user and is referenced by Loan.
+// A friend can be created implicitly (when the user adds their first
+// loan) or explicitly. We never let a loan reference a friend owned
+// by another user.
+// ─────────────────────────────────────────────────────────────────────
+
+model Friend {
+  id        String    @id @default(cuid())
+  userId    String
+  name      String
+  phone     String?
+  email     String?
+  optedOutAt DateTime? @db.Timestamptz(6)
+  optOutToken String?  @unique
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  loans Loan[]
+
+  @@index([userId])
+  @@map("friends")
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Loan
+//
+// `amount` is in *poisha* (BDT x 100). `givenDate` / `dueDate` are
+// `@db.Date` (date-only). The audit timestamps are UTC timestamptz.
+// The status, amountPaid, and remaining are *never* stored — they are
+// derived from `Payment` rows in `lib/loanStatus.ts`.
+// ─────────────────────────────────────────────────────────────────────
+
+enum Tone {
+  Friendly
+  Neutral
+  Firm
+}
+
+enum MessageLanguage {
+  en
+  bn
+}
+
+model Loan {
+  id              String          @id @default(cuid())
+  userId          String
+  friendId        String
+  amount          Int             // poisha (BDT x 100)
+  givenDate       DateTime        @db.Date
+  dueDate         DateTime        @db.Date
+  note            String?
+  smsEnabled      Boolean         @default(true)
+  emailEnabled    Boolean         @default(false)
+  reminderTimings Json            @default("{}")
+  tone            Tone            @default(Friendly)
+  messageLanguage MessageLanguage @default(en)
+  consentConfirmed Boolean        @default(false)
+  paidAt          DateTime?       @db.Timestamptz(6)
+  deletedAt       DateTime?       @db.Timestamptz(6)
+  createdAt       DateTime        @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime        @default(now()) @updatedAt @db.Timestamptz(6)
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  friend   Friend   @relation(fields: [friendId], references: [id], onDelete: Cascade)
+  payments          Payment[]
+  rescheduleEntries RescheduleEntry[]
+  reminderLogs      ReminderLog[]
+
+  // The list view sorts by dueDate desc and the dashboard filters by
+  // status (which the server derives; the index supports the inner
+  // scan). userId is indexed for the global "my loans" query.
+  @@index([userId, dueDate])
+  @@index([userId, deletedAt])
+  @@index([friendId])
+  @@map("loans")
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Payment
+// ─────────────────────────────────────────────────────────────────────
+
+enum PaymentMethod {
+  Cash
+  bKash
+  Nagad
+  Bank
+  Other
+}
+
+model Payment {
+  id        String        @id @default(cuid())
+  loanId    String
+  amount    Int           // poisha
+  date      DateTime      @db.Date
+  method    PaymentMethod @default(Other)
+  note      String?
+  createdAt DateTime      @default(now()) @db.Timestamptz(6)
+
+  loan Loan @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  @@index([loanId, date])
+  @@map("payments")
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Reschedule history
+// ─────────────────────────────────────────────────────────────────────
+
+model RescheduleEntry {
+  id            String   @id @default(cuid())
+  loanId        String
+  fromDate      DateTime @db.Date
+  toDate        DateTime @db.Date
+  reason        String?
+  notifyFriend  Boolean  @default(true)
+  changedAt     DateTime @default(now()) @db.Timestamptz(6)
+
+  loan Loan @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  @@index([loanId, changedAt])
+  @@map("reschedule_entries")
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Reminder log
+//
+// One row per *scheduled* reminder (not per send attempt). The
+// dedupeKey ensures the cron job never schedules a duplicate of the
+// same loan+tone+channel+scheduled-time tuple.
+// ─────────────────────────────────────────────────────────────────────
+
+enum ReminderChannel {
+  SMS
+  Email
+}
+
+enum ReminderStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+  SKIPPED
+}
+
+model ReminderLog {
+  id                  String          @id @default(cuid())
+  loanId              String
+  channel             ReminderChannel
+  scheduledFor        DateTime        @db.Timestamptz(6)
+  sentAt              DateTime?       @db.Timestamptz(6)
+  status              ReminderStatus  @default(QUEUED)
+  providerMessageId   String?
+  error               String?         @db.Text
+  dedupeKey           String          @unique
+  createdAt           DateTime        @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime        @default(now()) @updatedAt @db.Timestamptz(6)
+
+  loan Loan @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  @@index([loanId, scheduledFor])
+  @@index([status, scheduledFor])
+  @@index([scheduledFor])
+  @@map("reminder_logs")
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Reminder settings
+//
+// One row per user (unique on `userId`). `templates` is a JSON blob
+// keyed by tone → messageLanguage → { sms, emailSubject, email }.
+// Stored as JSONB so we can index into it for migrations without
+// reshaping the table.
+// ─────────────────────────────────────────────────────────────────────
+
+model ReminderSettings {
+  id                String          @id @default(cuid())
+  userId            String          @unique
+  defaultTone       Tone            @default(Friendly)
+  defaultTimings    Json            @default("{}")
+  smsEnabled        Boolean         @default(true)
+  emailEnabled      Boolean         @default(true)
+  messageLanguage   MessageLanguage @default(en)
+  templates         Json            @default("{}")
+  createdAt         DateTime        @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime        @default(now()) @updatedAt @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("reminder_settings")
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Notification
+//
+// `titleKey` is the i18n key. `params` is a JSON blob of the
+// arguments the dictionary function expects. The UI translates at
+// read time, so the same record renders in EN or BN depending on the
+// viewer's language preference.
+// ─────────────────────────────────────────────────────────────────────
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  type      String
+  titleKey  String
+  params    Json      @default("{}")
+  loanId    String?
+  readAt    DateTime? @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+  @@map("notifications")
+}

@@ -120,6 +120,10 @@ export const bn: Dictionary = {
   "auth.checkInboxBody": "যদি ওই ইমেইলে কোনো অ্যাকাউন্ট থাকে, আমরা একটি রিসেট লিংক পাঠিয়েছি।",
   "auth.tokenMissingTitle": "রিসেট লিংক পাওয়া যাচ্ছে না",
   "auth.tokenMissingBody": "আবার আপনার ইমেইলের লিংকটি খুলুন।",
+  "auth.rateLimited":
+    "অনেক চেষ্টা হয়েছে। কয়েক মিনিট অপেক্ষা করে আবার চেষ্টা করুন।",
+  "auth.tokenInvalid":
+    "এই রিসেট লিংকটি সঠিক নয় বা মেয়াদ শেষ। নতুন একটি লিংকের অনুরোধ করুন।",
   "auth.updating": "আপডেট হচ্ছে…",
   "auth.resetTitle": "পাসওয়ার্ড রিসেট করুন",
   "auth.resetSubtitle":

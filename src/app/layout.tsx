@@ -5,6 +5,7 @@ import "./globals.css";
 import { Providers } from "./providers";
 import { getT, readServerLang } from "@/lib/i18n/server";
 import { dictionary } from "@/lib/i18n";
+import { auth } from "@/server/auth";
 
 // The root layout reads the language cookie (`readServerLang()` calls
 // `cookies()`) which makes it dynamic. We can't use the
@@ -55,12 +56,16 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function RootLayout({
   children,
 }: LayoutProps<"/">) {
-  // The server reads the language cookie and stamps it on <html>.
-  // This is what makes the first paint Bangla (no flash of English)
-  // for any visitor who has already chosen বাংলা. The client
-  // provider re-reads on mount and re-renders if the cookie or
-  // localStorage has drifted.
-  const lang = await readServerLang();
+  // Resolve the language cookie and the session in parallel. The
+  // language cookie is read at the top so <html lang> matches the
+  // user's preference on first paint (no flash of English for a
+  // Bangla user). The session is then passed to <Providers> so
+  // the client-side SessionProvider has the user available
+  // immediately and the navbar / profile menu render the real
+  // name on the first render — no "Sign in" flash for a signed-in
+  // user. Both calls are server-side; the JWT verification
+  // happens in the same request that rendered the layout.
+  const [lang, session] = await Promise.all([readServerLang(), auth()]);
   const t = await getT();
   return (
     <html
@@ -92,7 +97,9 @@ export default async function RootLayout({
          *  blocking-prerender check refuses to prerender the root
          *  layout and the static `/_not-found` page. */}
         <Suspense fallback={null}>
-          <Providers initialLang={lang}>{children}</Providers>
+          <Providers initialLang={lang} session={session}>
+            {children}
+          </Providers>
         </Suspense>
       </body>
     </html>

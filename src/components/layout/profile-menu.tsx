@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * ProfileMenu — the rightmost element in the top bar. An avatar "A" that
- * opens a dropdown with the persona's name/email header, three route
- * links, a divider, and a "Log out" button.
+ * ProfileMenu — the rightmost element in the top bar. An avatar
+ * initial that opens a dropdown with the user's name/email header,
+ * three route links, a divider, and a "Log out" button.
  *
  * Keyboard / a11y:
  *   - `aria-haspopup="menu"` + `aria-expanded` on the trigger.
@@ -13,7 +13,10 @@
  *   - Click outside closes.
  *   - Route change closes (pathname subscription).
  *
- * The trigger stays a 36px avatar so the bar's height doesn't change.
+ * The avatar initial is the first character of the user's name
+ * (from the session). When the user is signed out (which can
+ * happen briefly during a sign-out round-trip), the trigger
+ * renders nothing rather than a hardcoded placeholder.
  */
 
 import Link from "next/link";
@@ -28,11 +31,8 @@ import {
 } from "react";
 import { BarChart3, LogOut, Settings, History } from "lucide-react";
 import { useT } from "@/lib/i18n/LanguageProvider";
+import { useSessionUser } from "@/hooks/use-session-user";
 import { signOut } from "@/services/authService";
-
-const DISPLAY_NAME = "Ayesha";
-const DISPLAY_EMAIL = "ayesha@loanreminder.app";
-const INITIAL = DISPLAY_NAME.charAt(0).toUpperCase();
 
 type LinkItem = { kind: "link"; href: string; label: string; icon: typeof Settings };
 type ActionItem = { kind: "action"; label: string; icon: typeof LogOut };
@@ -42,6 +42,7 @@ export function ProfileMenu() {
   const router = useRouter();
   const pathname = usePathname();
   const { t } = useT();
+  const { user } = useSessionUser();
   const [open, setOpen] = useState(false);
   const [focusIdx, setFocusIdx] = useState(-1);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -150,20 +151,24 @@ export function ProfileMenu() {
     }
   }
 
-  function handleLogOut() {
+  async function handleLogOut() {
     close(false);
-    void signOut().finally(() => {
-      router.push("/login");
-      router.refresh();
-    });
+    await signOut();
+    router.push("/login");
+    router.refresh();
   }
+
+  // No user → don't render the trigger. The proxy guarantees
+  // `(app)` routes always have a session, but a brief window
+  // after sign-out can leave the TopBar mounted without a user.
+  if (!user) return null;
 
   return (
     <div ref={containerRef} className="relative">
       <button
         ref={triggerRef}
         type="button"
-        aria-label={`${t["topbar.profileMenu"]}, ${DISPLAY_NAME}`}
+        aria-label={`${t["topbar.profileMenu"]}, ${user.name}`}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={menuId}
@@ -171,7 +176,7 @@ export function ProfileMenu() {
         className="relative flex size-9 items-center justify-center overflow-clip rounded-pill bg-avatar-bg transition-colors hover:ring-2 hover:ring-brand-ring focus-visible:ring-2 focus-visible:ring-brand-600"
       >
         <span className="whitespace-nowrap text-label font-semibold leading-6 text-brand-600">
-          {INITIAL}
+          {user.initial}
         </span>
       </button>
 
@@ -185,8 +190,8 @@ export function ProfileMenu() {
         >
           {/* Header — name + email */}
           <div className="flex flex-col gap-0.5 border-b border-border bg-surface px-4 py-3">
-            <p className="font-semibold text-body text-text">{DISPLAY_NAME}</p>
-            <p className="font-normal text-helper text-muted">{DISPLAY_EMAIL}</p>
+            <p className="font-semibold text-body text-text">{user.name}</p>
+            <p className="font-normal text-helper text-muted">{user.email}</p>
           </div>
 
           {/* Items */}

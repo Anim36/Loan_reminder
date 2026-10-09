@@ -928,7 +928,6 @@ function PaymentModal({
   loan,
   onSubmit,
   t,
-  lang,
 }: {
   open: boolean;
   onClose: () => void;

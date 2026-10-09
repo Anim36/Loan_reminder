@@ -236,26 +236,14 @@ export async function updateNotificationPrefs(
   return next;
 }
 
-/** Pretends to change the password. The real auth flow lives elsewhere. */
-export async function changePassword(args: {
-  current: string;
-  next: string;
-}): Promise<{ ok: true }> {
-  if (API_ENABLED) {
-    await apiPut<{ ok: true }>("/settings/me/password", args);
-    return { ok: true };
-  }
-  return { ok: true };
-}
-
-/** Pretends to delete the account. */
-export async function deleteAccount(): Promise<{ ok: true }> {
-  if (API_ENABLED) {
-    await apiPut<{ ok: true }>("/settings/me/delete", {});
-    return { ok: true };
-  }
-  return { ok: true };
-}
+/**
+ * NOTE — `changePassword` and `deleteAccount` were removed from
+ * this module once the real backend wired them up. They now
+ * live in `./authService` and call the Auth.js + Prisma API
+ * routes (`/api/settings/password` and
+ * `/api/settings/delete-account`). The localStorage settings
+ * service is purely a UI preference store; password and
+ * account management go through the server.
 
 /** Lets the rest of the app react to settings changes. */
 export function subscribeUserSettings(handler: () => void): () => void {

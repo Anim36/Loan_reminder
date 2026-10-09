@@ -114,6 +114,10 @@ export const en: Dictionary = {
   "auth.checkInboxBody": "If an account exists for that email, we just sent a reset link.",
   "auth.tokenMissingTitle": "Reset link missing",
   "auth.tokenMissingBody": "Open the link from your email again.",
+  "auth.rateLimited":
+    "Too many attempts. Please wait a few minutes and try again.",
+  "auth.tokenInvalid":
+    "This reset link is invalid or has expired. Request a new one.",
   "auth.updating": "Updating…",
   "auth.resetTitle": "Reset your password",
   "auth.resetSubtitle": "Enter a new password to log back in.",

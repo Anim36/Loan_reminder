@@ -36,6 +36,7 @@ import { useCallback, useEffect, useRef } from "react";
 
 import { Avatar } from "@/components/ui/avatar";
 import { useT } from "@/lib/i18n/LanguageProvider";
+import { useSessionUser } from "@/hooks/use-session-user";
 import { signOut } from "@/services/authService";
 import { SidebarBrand, SidebarContent } from "./sidebar-content";
 import {
@@ -234,19 +235,25 @@ export function MobileNavDrawer() {
 
 function DrawerFooter({ onLogOut }: { onLogOut: () => void }) {
   const { t } = useT();
+  const { user } = useSessionUser();
+  // The session is always present for `(app)` routes — the
+  // proxy guards them — but render a graceful fallback so a
+  // sign-out round-trip doesn't show hardcoded placeholders.
+  const displayName = user?.name ?? "—";
+  const displayEmail = user?.email ?? "";
   return (
     <div
       className="shrink-0 border-t border-border bg-surface px-6 pt-5"
       style={{ paddingBottom: "max(20px, env(safe-area-inset-bottom))" }}
     >
       <div className="flex items-center gap-3">
-        <Avatar name="Ayesha" size={40} />
+        <Avatar name={displayName} size={40} />
         <div className="flex min-w-0 flex-1 flex-col leading-tight">
           <span className="truncate font-semibold text-body text-text">
-            Ayesha
+            {displayName}
           </span>
           <span className="truncate font-normal text-helper text-muted">
-            ayesha@loanreminder.app
+            {displayEmail}
           </span>
         </div>
       </div>

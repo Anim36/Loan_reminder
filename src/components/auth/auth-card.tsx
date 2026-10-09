@@ -64,24 +64,28 @@ export function AuthCard({
 
         {children}
 
-        <div className="flex w-full items-center gap-3">
-          <div className="h-px flex-1 bg-border" />
-          <span className="font-normal text-helper text-muted">
-            {t["auth.dividerOr"]}
-          </span>
-          <div className="h-px flex-1 bg-border" />
-        </div>
+        {onGoogle ? (
+          <>
+            <div className="flex w-full items-center gap-3">
+              <div className="h-px flex-1 bg-border" />
+              <span className="font-normal text-helper text-muted">
+                {t["auth.dividerOr"]}
+              </span>
+              <div className="h-px flex-1 bg-border" />
+            </div>
 
-        <button
-          type="button"
-          onClick={onGoogle}
-          className="flex w-full items-center justify-center gap-2 rounded-input border border-border bg-surface px-[18px] py-[11px] min-h-[44px] font-semibold text-label text-text transition-colors hover:bg-brand-50 hover:text-brand-600"
-        >
-          {/* Chrome mark — single-stroke monogram, mirrors the Figma
-              chrome icon at 18px. */}
-          <ChromeMark className="size-[18px] shrink-0" aria-hidden />
-          {t["auth.continueWithGoogle"]}
-        </button>
+            <button
+              type="button"
+              onClick={onGoogle}
+              className="flex w-full items-center justify-center gap-2 rounded-input border border-border bg-surface px-[18px] py-[11px] min-h-[44px] font-semibold text-label text-text transition-colors hover:bg-brand-50 hover:text-brand-600"
+            >
+              {/* Chrome mark — single-stroke monogram, mirrors the Figma
+                  chrome icon at 18px. */}
+              <ChromeMark className="size-[18px] shrink-0" aria-hidden />
+              {t["auth.continueWithGoogle"]}
+            </button>
+          </>
+        ) : null}
 
         <p className="text-center font-normal text-helper text-muted">
           {footerPrompt}{" "}

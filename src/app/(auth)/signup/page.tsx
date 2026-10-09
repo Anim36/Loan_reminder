@@ -17,20 +17,23 @@
  */
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import { Mail, ArrowRight } from "lucide-react";
+import { signIn as nextAuthSignIn } from "next-auth/react";
 
 import { AuthCard, PasswordInput } from "@/components/auth/auth-card";
 import { AuthToolbar } from "@/components/auth/auth-toolbar";
-import { signUp } from "@/services/authService";
+import { signUp, AuthError } from "@/services/authService";
 import { useT } from "@/lib/i18n/LanguageProvider";
 
 const baseInput =
   "w-full h-[48px] px-[14px] flex items-center gap-[10px] rounded-input border bg-surface overflow-hidden font-normal text-body";
 
-export default function SignupPage() {
+function SignupInner() {
   const router = useRouter();
+  const params = useSearchParams();
+  const callbackUrl = params.get("callbackUrl") || "/dashboard";
   const { t } = useT();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -38,6 +41,22 @@ export default function SignupPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<{ name?: string; email?: string; password?: string }>({});
   const [submitting, setSubmitting] = useState(false);
+  const [googleEnabled, setGoogleEnabled] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/google-enabled")
+      .then((r) => r.json())
+      .then((body: { enabled?: boolean }) => {
+        if (!cancelled) setGoogleEnabled(Boolean(body.enabled));
+      })
+      .catch(() => {
+        if (!cancelled) setGoogleEnabled(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function validate() {
     const next: typeof errors = {};
@@ -57,12 +76,24 @@ export default function SignupPage() {
     setSubmitting(true);
     try {
       await signUp({ name: name.trim(), email: email.trim(), password });
-      router.push("/dashboard");
+      router.push(callbackUrl);
       router.refresh();
     } catch (err) {
-      setErrors({ password: err instanceof Error ? err.message : t["auth.signUpFailed"] });
+      const code = err instanceof AuthError ? err.code : null;
+      if (code === "rate_limited") {
+        setErrors({ password: t["auth.rateLimited"] });
+      } else if (err instanceof Error) {
+        setErrors({ password: err.message });
+      } else {
+        setErrors({ password: t["auth.signUpFailed"] });
+      }
       setSubmitting(false);
     }
+  }
+
+  async function handleGoogle() {
+    setSubmitting(true);
+    await nextAuthSignIn("google", { callbackUrl });
   }
 
   return (
@@ -74,6 +105,7 @@ export default function SignupPage() {
         footerPrompt={t["auth.hasAccount"]}
         footerLinkLabel={t["auth.logInTitle"]}
         footerLinkHref="/login"
+        onGoogle={googleEnabled ? handleGoogle : undefined}
       >
         <form onSubmit={handleSubmit} noValidate className="flex w-full flex-col gap-6">
           {/* Name field */}
@@ -180,5 +212,19 @@ export default function SignupPage() {
         </p>
       </AuthCard>
     </>
+  );
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[60vh] items-center justify-center">
+          <span className="text-muted text-helper">Loading…</span>
+        </div>
+      }
+    >
+      <SignupInner />
+    </Suspense>
   );
 }

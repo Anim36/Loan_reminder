@@ -66,8 +66,6 @@ export type { Notification, NotificationKind } from "./notificationService";
 export { useNotifications } from "./use-notifications";
 
 export {
-  changePassword,
-  deleteAccount,
   getUserSettings,
   saveUserSettings,
   SEED as USER_SETTINGS_SEED,
@@ -85,16 +83,15 @@ export type {
 export { useUserSettings } from "./use-user-settings";
 
 export {
+  AuthError,
+  changePassword,
+  deleteAccount,
   forgotPassword,
-  getSession,
-  isAuthenticated,
-  onAuthChange,
   resetPassword,
   signIn,
   signOut,
   signUp,
 } from "./authService";
-export type { AuthUser } from "./authService";
 
 export {
   getFriend,

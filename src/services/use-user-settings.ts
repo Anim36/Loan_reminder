@@ -5,11 +5,16 @@
 // "changed" reference on every render. The first read runs the
 // normalizer (which migrates old shapes to the current v2 record and
 // writes the migrated value back), so subsequent reads are O(1).
+//
+// Since the user can be signed in via Auth.js, the profile
+// (`name`/`phone`), language, theme, and Bangla-numerals flag are
+// also pushed to the server through `updateProfile` (PATCH
+// /api/auth/me). The localStorage copy is still written so the UI
+// stays consistent across reloads, but the server copy is the
+// source of truth for the next sign-in.
 
 import { useCallback, useSyncExternalStore } from "react";
 import {
-  changePassword as changePasswordAsync,
-  deleteAccount as deleteAccountAsync,
   getUserSettings,
   normalizeSettings,
   saveUserSettings as saveUserSettingsAsync,
@@ -23,6 +28,11 @@ import {
 } from "./settingsService";
 import { SEED } from "./settingsService";
 import { hasWindow } from "./storage";
+import {
+  changePassword as changePasswordApi,
+  deleteAccount as deleteAccountApi,
+  updateProfile as updateProfileServer,
+} from "./authService";
 
 const STORAGE_KEY = "loan-reminder:user-settings:v2";
 const CHANGE_EVENT = "user-settings:change";
@@ -87,30 +97,67 @@ export function useUserSettings(): {
   );
   const updateProfile = useCallback(
     async (patch: { displayName?: string; phone?: string; email?: string }) => {
+      // Local copy first so the form reflects the change
+      // immediately even if the server is slow or down.
       await updateProfileAsync(patch);
+      // Server is the source of truth for next sign-in. We only
+      // forward the fields the server actually accepts (name,
+      // phone). Email changes still need a verification flow we
+      // haven't built yet, so they're localStorage-only.
+      try {
+        await updateProfileServer({
+          name: patch.displayName,
+          phone: patch.phone,
+        });
+      } catch (err) {
+        // Don't swallow — but don't fail the save either, the
+        // local copy is already updated. Re-throw so callers can
+        // show a "saved locally, sync failed" toast in the
+        // future.
+        console.warn("[useUserSettings] server profile sync failed", err);
+      }
     },
     [],
   );
   const updateTheme = useCallback(async (theme: ThemeChoice) => {
     await updateThemeAsync(theme);
+    try {
+      await updateProfileServer({ theme });
+    } catch (err) {
+      console.warn("[useUserSettings] server theme sync failed", err);
+    }
   }, []);
   const updateBanglaNumerals = useCallback(async (enabled: boolean) => {
     await updateBanglaNumeralsAsync(enabled);
+    try {
+      await updateProfileServer({ banglaNumerals: enabled });
+    } catch (err) {
+      console.warn("[useUserSettings] server numerals sync failed", err);
+    }
   }, []);
   const updateNotificationPrefs = useCallback(
     async (patch: Partial<NotificationPrefs>) => {
+      // Notification prefs are not yet a server-side concern
+      // (no Preference table in the schema). Local-only.
       await updateNotificationPrefsAsync(patch);
     },
     [],
   );
   const changePassword = useCallback(
     async (args: { current: string; next: string }) => {
-      return changePasswordAsync(args);
+      // Real backend call (Auth.js + Prisma) — succeeds
+      // silently on success, throws `AuthError` otherwise.
+      await changePasswordApi(args);
+      return { ok: true as const };
     },
     [],
   );
   const deleteAccount = useCallback(async () => {
-    return deleteAccountAsync();
+    // Real backend call. The route deletes the user, the
+    // cascading children, and the session cookie. The caller
+    // is expected to navigate to /login.
+    await deleteAccountApi();
+    return { ok: true as const };
   }, []);
   const saveAll = useCallback(async (next: UserSettings) => {
     await saveUserSettingsAsync(next);

@@ -134,6 +134,48 @@ export function LanguageProvider({
     window.dispatchEvent(new CustomEvent(LANG_CHANGE_EVENT));
   }, []);
 
+  // When the user is signed in, mirror the language change to the
+  // server so the next sign-in (on any device) lands in the
+  // same language. We do this as a side-effect of the language
+  // flipping so the language switcher itself doesn't need to know
+  // about the auth layer. The call is fire-and-forget; if the
+  // request fails the local copy is still authoritative for the
+  // current tab, and the next refetch will pick the cookie up.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        // Probe the session via Auth.js's session endpoint. If
+        // the user isn't signed in the response is `{ }` and
+        // we'll bail out before the PATCH.
+        const sessionRes = await fetch("/api/auth/session", {
+          credentials: "same-origin",
+        });
+        if (cancelled) return;
+        if (!sessionRes.ok) return;
+        const body = (await sessionRes.json()) as {
+          user?: { id?: string };
+        } | null;
+        if (!body?.user?.id) return;
+        await fetch("/api/auth/me", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ language: lang }),
+        });
+      } catch {
+        // Best-effort — a 401 here just means the user isn't
+        // signed in (which is the common case on the marketing
+        // pages). The cookie + localStorage are still the
+        // source of truth for the current tab.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [lang]);
+
   const value = useMemo<LanguageContextValue>(
     () => ({ lang, t: dictionary(lang), setLang }),
     [lang, setLang],

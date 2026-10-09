@@ -46,3 +46,10 @@ dev.out
 dev.err
 figma-shots/
 .puku/
+
+# embedded-postgres data dir (local dev only — production uses a managed DB)
+/.pg-data/
+/.pg-data
+pg-data/
+# Embedded Postgres may also drop a runtime lock/socket here.
+/tmp/.pg-*
