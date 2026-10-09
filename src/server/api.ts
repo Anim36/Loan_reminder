@@ -115,6 +115,19 @@ export interface ApiHandlerOptions<
   body?: TBody;
   /** Status code for success responses. Defaults to 200. */
   successStatus?: number;
+  /**
+   * When `true`, the handler's return value is written to the
+   * response body as-is. The standard B4 success envelope
+   * (`{ data: T }`) is **not** added. This is intended for
+   * list endpoints whose payload already carries the data
+   * key (e.g. `{ data: [...loans], meta: {...} }`); services
+   * then read `.data` for the array and `.meta` for the page
+   * info in a single, consistent hop — same as the
+   * single-resource endpoints, which already use
+   * `{ data: DTO }`. Default is `false` (the envelope is
+   * applied).
+   */
+  listMode?: boolean;
   /** The route function. Receives the parsed input and the
    *  per-request context. */
   handler: (args: {
@@ -258,9 +271,19 @@ export async function apiHandler<
       : (undefined as unknown as z.infer<TBody>);
 
     // 3. Hand off
-    const data = await opts.handler({ user, req, params, query, body });
+    const result = await opts.handler({ user, req, params, query, body });
+    if (opts.listMode) {
+      // List endpoints return their own shape
+      // (`{ data: [...], meta: {...} }` or `{ data: [...], stats, meta }`)
+      // and we serialise it as-is so the client can read `.data`
+      // (the array) and `.meta` / `.stats` (the page info) in a
+      // single hop, identical to the single-resource reads.
+      return NextResponse.json(result, { status: opts.successStatus ?? 200 }) as NextResponse<
+        ApiFailure | ApiSuccess<unknown>
+      >;
+    }
     return NextResponse.json<ApiSuccess<unknown>>(
-      { data },
+      { data: result },
       { status: opts.successStatus ?? 200 },
     );
   } catch (err) {

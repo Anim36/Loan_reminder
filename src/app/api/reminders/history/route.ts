@@ -116,5 +116,6 @@ export async function GET(req: NextRequest) {
         stats: { total: totalCount, delivered, failed },
       };
     },
+    listMode: true,
   });
 }

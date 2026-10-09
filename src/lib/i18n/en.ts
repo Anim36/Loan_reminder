@@ -183,6 +183,8 @@ export const en: Dictionary = {
     n === 1 ? "Overdue by 1 day" : `Overdue by ${n} days`,
   "loans.dueIn": (n) =>
     n === 1 ? "Due in 1 day" : `Due in ${n} days`,
+  "loans.dueToday": "Due today",
+  "loans.dueTomorrow": "Due tomorrow",
   "loans.partial": (paid, total) => `${paid} of ${total} paid`,
   "loans.rescheduled": "Rescheduled",
   "loans.empty.title": "No loans yet",
@@ -229,6 +231,10 @@ export const en: Dictionary = {
   "loanDetails.toast.loanSaved": "Loan saved. Reminder scheduled.",
   "loanDetails.toast.markedPaid": "Marked as paid.",
   "loanDetails.toast.reminderSent": "Reminder sent.",
+  "loanDetails.toast.reminderQueued":
+    "Reminder queued. (Sending is not enabled yet — the log was recorded.)",
+  "loanDetails.toast.paymentError":
+    "We couldn't save that. Please try again.",
   "loanDetails.toast.dueDateUpdated": "Due date updated.",
   "loanDetails.toast.loanDeleted": "Loan deleted.",
   "loanDetails.toast.paymentDeleted": "Payment removed.",
@@ -636,6 +642,7 @@ export const en: Dictionary = {
   "settings.fieldRequired": "This field is required.",
   "settings.fieldInvalid": "Please enter a valid value.",
   "settings.saveAria": "Save changes",
+  "settings.saveFailed": "We couldn't save your changes. Please try again.",
   "settings.themeOptionAria": (label) => `Theme: ${label}`,
 
   // reports
@@ -1016,6 +1023,14 @@ export const en: Dictionary = {
   "ui.reports.reliability": "Friend reliability",
   "ui.reports.upcoming": "Upcoming this week",
   "ui.reports.upcomingEmpty": "Nothing due in the next 7 days.",
+  "ui.reports.since": (d) => `Since ${d}`,
+  "ui.reports.allTime": "All time",
+  "ui.reports.outstandingHelper": "Still to be paid back",
+  "ui.reports.onTimeHelper": "Paid on or before the due date",
+  "ui.reports.monthlyHelper": "Per-month trend",
+  "ui.reports.loans": "loans",
+  "ui.reports.avgHelper": "Across fully repaid loans",
+  "ui.reports.reliabilityHelper": "Based on the last few loans",
   "ui.reports.avgRepayTime": (d) =>
     d === 1 ? "Average 1 day to repay" : `Average ${d} days to repay`,
   "ui.reports.legend.lent": "Lent",

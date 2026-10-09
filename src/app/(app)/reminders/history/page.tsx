@@ -21,11 +21,8 @@ import {
 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Chip, EmptyState, StatusBadge } from "@/components/ui";
-import {
-  getReminderHistory,
-  getLoans,
-  type ReminderHistoryItem,
-} from "@/services";
+import { useReminderHistoryQuery } from "@/services/useQueries";
+import type { ReminderHistoryItem } from "@/lib/api/mappers";
 import {
   formatDateTime,
   formatMoney,
@@ -35,7 +32,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { useToday } from "@/lib/use-today";
 import { useT } from "@/lib/i18n/LanguageProvider";
 import { useUserSettings } from "@/services/use-user-settings";
-import type { Loan, ReminderChannel } from "@/types";
+import type { ReminderChannel } from "@/types";
 
 type ChannelFilter = "All" | ReminderChannel;
 type StatusFilter = "All" | "Delivered" | "Failed";
@@ -46,8 +43,6 @@ const STATUSES: StatusFilter[] = ["All", "Delivered", "Failed"];
 
 export default function ReminderHistoryPage() {
   const { t, lang } = useT();
-  const [history, setHistory] = useState<ReminderHistoryItem[] | null>(null);
-  const [loansById, setLoansById] = useState<Record<string, Loan>>({});
   const [query, setQuery] = useState("");
   const [channel, setChannel] = useState<ChannelFilter>("All");
   const [status, setStatus] = useState<StatusFilter>("All");
@@ -56,48 +51,38 @@ export default function ReminderHistoryPage() {
   const { settings } = useUserSettings();
   const numeralMode = settings.banglaNumerals ? "bn" : "latin";
 
+  // Server-side filter debounced. We send `channel` / `status` as
+  // booleans; the wire understands them.
+  const [debouncedQ, setDebouncedQ] = useState(query);
   useEffect(() => {
-    let cancelled = false;
-    Promise.all([getReminderHistory(), getLoans()]).then(([h, l]) => {
-      if (cancelled) return;
-      setHistory(h);
-      const map: Record<string, Loan> = {};
-      for (const loan of l) map[loan.id] = loan;
-      setLoansById(map);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    const id = setTimeout(() => setDebouncedQ(query), 250);
+    return () => clearTimeout(id);
+  }, [query]);
 
-  const stats = useMemo(() => {
-    let total = 0;
-    let delivered = 0;
-    let failed = 0;
-    if (history) {
-      for (const r of history) {
-        total++;
-        if (r.status === "Delivered") delivered++;
-        else failed++;
-      }
-    }
-    return { total, delivered, failed };
-  }, [history]);
+  // The wire enum covers QUEUED/SENT/DELIVERED/FAILED/SKIPPED. The
+  // page UI only offers "Delivered" / "Failed" (the post-send
+  // outcomes a user actually cares about), so we map the UI choice
+  // to FAILED vs anything-else here.
+  const wireStatus =
+    status === "Failed"
+      ? "FAILED"
+      : status === "Delivered"
+        ? "DELIVERED"
+        : undefined;
+
+  const historyQ = useReminderHistoryQuery({
+    q: debouncedQ || undefined,
+    channel: channel === "All" ? undefined : channel,
+    status: wireStatus,
+  });
+
+  const history = historyQ.data?.items;
+  const stats = historyQ.data?.stats;
 
   const visible = useMemo(() => {
     if (!history) return [];
-    const q = query.trim().toLowerCase();
-    const base = history.filter((r) => {
-      if (channel !== "All" && r.channel !== channel) return false;
-      if (status !== "All" && r.status !== status) return false;
-      if (q) {
-        const loan = loansById[r.loanId];
-        const name = loan?.friend.name ?? "";
-        if (!name.toLowerCase().includes(q)) return false;
-      }
-      return true;
-    });
-    base.sort((a, b) =>
+    const arr = history.slice();
+    arr.sort((a, b) =>
       sortDir === "desc"
         ? a.sentAt < b.sentAt
           ? 1
@@ -108,10 +93,10 @@ export default function ReminderHistoryPage() {
           ? -1
           : a.sentAt > b.sentAt
             ? 1
-            : 0,
+          : 0,
     );
-    return base;
-  }, [history, query, channel, status, sortDir, loansById]);
+    return arr;
+  }, [history, sortDir]);
 
   const isEmpty = !!history && history.length === 0;
   const isFilteredEmpty = !isEmpty && visible.length === 0;
@@ -135,17 +120,17 @@ export default function ReminderHistoryPage() {
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatCard
           label={t["reminders.history.totalSent"]}
-          value={stats.total}
+          value={stats?.total ?? 0}
           tone="brand"
         />
         <StatCard
           label={t["reminders.history.delivered"]}
-          value={stats.delivered}
+          value={stats?.delivered ?? 0}
           tone="paid"
         />
         <StatCard
           label={t["reminders.history.failed"]}
-          value={stats.failed}
+          value={stats?.failed ?? 0}
           tone="overdue"
         />
       </div>
@@ -212,7 +197,7 @@ export default function ReminderHistoryPage() {
         </>
       )}
 
-      {history === null ? (
+      {historyQ.isLoading ? (
         <span className="sr-only">{t["ui.loadingReminders"]}</span>
       ) : null}
     </section>
@@ -337,23 +322,15 @@ function Row({
   lang,
   numeralMode,
 }: {
-  row: Row;
+  row: ReminderHistoryItem;
   isLast: boolean;
   t: ReturnType<typeof useT>["t"];
   lang: "en" | "bn";
   numeralMode: "latin" | "bn";
 }) {
-  const [loan, setLoan] = useState<Loan | undefined>(undefined);
-  useEffect(() => {
-    let cancelled = false;
-    getLoans().then((loans) => {
-      if (cancelled) return;
-      setLoan(loans.find((l) => l.id === row.loanId));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [row.loanId]);
+  // The reminder history API returns the friend name and amount
+  // alongside every row, so the page no longer needs a second round
+  // trip just to render the avatar / amount cells.
   return (
     <div
       className={`grid grid-cols-[1.6fr_120px_120px_180px_120px] items-center gap-4 px-6 h-[72px] overflow-clip ${
@@ -364,13 +341,13 @@ function Row({
         href={`/loans/${row.loanId}`}
         className="flex flex-1 min-w-0 items-center gap-3"
       >
-        <Avatar name={loan?.friend.name ?? "?"} />
+        <Avatar name={row.friendName} />
         <span className="font-medium text-body text-text truncate">
-          {loan?.friend.name ?? t["ui.unknown"]}
+          {row.friendName}
         </span>
       </Link>
       <span className="font-medium text-body text-text">
-        {loan ? formatMoney(loan.amount, numeralMode) : "—"}
+        {formatMoney(row.amount, numeralMode)}
       </span>
       <ChannelCell channel={row.channel} t={t} />
       <span className="font-normal text-helper text-muted">
@@ -440,22 +417,11 @@ function MobileCard({
   lang,
   numeralMode,
 }: {
-  row: Row;
+  row: ReminderHistoryItem;
   t: ReturnType<typeof useT>["t"];
   lang: "en" | "bn";
   numeralMode: "latin" | "bn";
 }) {
-  const [loan, setLoan] = useState<Loan | undefined>(undefined);
-  useEffect(() => {
-    let cancelled = false;
-    getLoans().then((loans) => {
-      if (cancelled) return;
-      setLoan(loans.find((l) => l.id === row.loanId));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [row.loanId]);
   return (
     <li className="rounded-card border border-border bg-surface p-4 shadow-card">
       <div className="flex items-center justify-between gap-3">
@@ -463,13 +429,13 @@ function MobileCard({
           href={`/loans/${row.loanId}`}
           className="flex min-w-0 flex-1 items-center gap-3"
         >
-          <Avatar name={loan?.friend.name ?? "?"} />
+          <Avatar name={row.friendName} />
           <div className="flex min-w-0 flex-col">
             <span className="truncate font-medium text-body text-text">
-              {loan?.friend.name ?? t["ui.unknown"]}
+              {row.friendName}
             </span>
             <span className="truncate font-normal text-helper text-muted">
-              {loan ? formatMoney(loan.amount, numeralMode) : "—"} ·{" "}
+              {formatMoney(row.amount, numeralMode)} ·{" "}
               {formatDateTime(row.sentAt, { lang, numeralMode })}
             </span>
           </div>

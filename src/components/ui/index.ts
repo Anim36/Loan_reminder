@@ -7,6 +7,8 @@ export { Chip } from "./chip";
 export { DatePicker } from "./date-picker";
 export { EmptyState } from "./empty-state";
 export type { EmptyStateType } from "./empty-state";
+export { QueryErrorState } from "./query-error-state";
+export type { QueryErrorStateProps } from "./query-error-state";
 export { Input } from "./input";
 export type { InputState } from "./input";
 export { Dialog } from "./dialog";

@@ -105,6 +105,28 @@ export default function SettingsPage() {
     return (t as unknown as Record<string, string>)[key] ?? key;
   }
 
+  /** Translate an `ApiError` from the settings / profile routes
+   *  into a user-facing string. The server returns a stable
+   *  `code` (e.g. `name_too_short`, `phone_invalid`) that we
+   *  map to an i18n key under `errors.api.<code>`. If the code
+   *  isn't recognised we fall back to the local generic copy. */
+  function translateSettingsError(err: unknown): string {
+    const code =
+      err && typeof err === "object" && "code" in err
+        ? (err as { code?: string }).code
+        : undefined;
+    if (code) {
+      const mapped = (t as unknown as Record<string, string>)[
+        `errors.api.${code}`
+      ];
+      if (mapped) return mapped;
+    }
+    if (err instanceof Error && err.message) {
+      return err.message;
+    }
+    return t["settings.saveFailed"];
+  }
+
   // Theme
   const theme = settings.theme ?? (themeValue as ThemeChoice | undefined) ?? "system";
   useEffect(() => {
@@ -121,7 +143,14 @@ export default function SettingsPage() {
   }, [ready, settings.theme, setTheme]);
 
   function handleThemePick(next: ThemeChoice) {
-    void saveTheme(next);
+    saveTheme(next).catch((err: unknown) => {
+      // The server is the source of truth for `theme`, but the
+      // local `setTheme` call below is what the user sees. If
+      // the server call fails we surface a translated toast
+      // instead of letting the unhandled rejection crash a
+      // sibling render (e.g. the next-themes provider).
+      toast.show(translateSettingsError(err));
+    });
     if (next === "system") {
       const prefersDark =
         typeof window !== "undefined" &&
@@ -200,13 +229,44 @@ export default function SettingsPage() {
     try {
       await updateProfile(result.data);
       toast.show(t["settings.profileSavedToast"]);
+    } catch (err) {
+      // Surface a translated toast instead of letting the error
+      // bubble up as an uncaught runtime error. The server's
+      // `ApiError.code` is the source of truth (e.g.
+      // `name_too_short`, `phone_invalid`); we map it to an i18n
+      // key. The form also keeps the previous values, so the user
+      // can correct and retry.
+      toast.show(translateSettingsError(err));
     } finally {
       setProfileBusy(false);
     }
   }
 
   async function togglePref(key: keyof typeof settings.notifications) {
-    await updateNotificationPrefs({ [key]: !settings.notifications[key] });
+    try {
+      await updateNotificationPrefs({
+        [key]: !settings.notifications[key],
+      });
+    } catch (err) {
+      toast.show(translateSettingsError(err));
+    }
+  }
+
+  async function handleLanguageChange(next: "en" | "bn") {
+    // The LanguageProvider owns the live locale (it's cookie
+    // driven so a reload is consistent). The Settings UI calls
+    // `setLang` directly; we don't currently persist the
+    // language to the server. If we add a /preferences `language`
+    // field later, that's the right place to fire it.
+    setLang(next);
+  }
+
+  async function handleBanglaNumeralsChange(next: boolean) {
+    try {
+      await updateBanglaNumerals(next);
+    } catch (err) {
+      toast.show(translateSettingsError(err));
+    }
   }
 
   // Password
@@ -424,7 +484,9 @@ export default function SettingsPage() {
                   type="button"
                   role="radio"
                   aria-checked={active}
-                  onClick={() => setLang(opt.value)}
+                  onClick={() => {
+                    void handleLanguageChange(opt.value);
+                  }}
                   className={[
                     "flex-1 min-w-0 px-[8px] py-[9px] rounded-[9px] text-center whitespace-nowrap",
                     active
@@ -445,7 +507,9 @@ export default function SettingsPage() {
         <div className="flex items-center gap-3">
           <Toggle
             checked={settings.banglaNumerals}
-            onChange={(v) => void updateBanglaNumerals(v)}
+            onChange={(v) => {
+              void handleBanglaNumeralsChange(v);
+            }}
           />
           <div className="flex flex-col gap-0.5">
             <p className="text-helper font-medium text-text">

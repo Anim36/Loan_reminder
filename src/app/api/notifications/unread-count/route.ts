@@ -17,5 +17,9 @@ export async function GET(req: NextRequest) {
       });
       return { count };
     },
+    // Scalar count — return the raw `{ count: N }` body so the
+    // service reads `.count` (no `.data` hop). This matches the
+    // shape the rest of the B5 frontend expects.
+    listMode: true,
   });
 }

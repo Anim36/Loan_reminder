@@ -1,116 +1,55 @@
 "use client";
 
-// Client-only hook that subscribes to the notification store.
-// Kept in its own file (with "use client") so the rest of @/services remains
-// RSC-safe.
+// `useNotifications` — wraps the React Query notifications
+// hook with the public surface the page already uses:
 //
-// `getSnapshot` is cached by the raw localStorage string. The first
-// read runs the normalizer (which migrates old / partial records),
-// so subsequent reads return the same reference until the raw
-// storage value changes.
+//   { notifications, unread, ready, markRead, markAllRead,
+//     refresh, deleteNotification (no-op legacy), isLoading,
+//     isError, error }
+//
+// The bell badge uses `useUnreadCountQuery` separately (a
+// dedicated 30s poll) so it can update without rerunning the
+// list query.
 
-import { useCallback, useSyncExternalStore } from "react";
+// (notifications hooks are read-only; no QueryClient needed here)
 import {
-  deleteNotification,
-  getNotifications,
-  getUnreadCount,
-  markAllRead,
-  markRead,
-  normalizeNotification,
-  SEED_NOTIFICATIONS,
-  type Notification,
-} from "./notificationService";
-import { hasWindow } from "./storage";
+  useNotificationsQuery,
+  useUnreadCountQuery,
+  useMarkReadMutation,
+  useMarkAllReadMutation,
+} from "./useQueries";
+import { queryKeys } from "@/lib/queryKeys";
+import type { Notification, NotificationKind } from "./notificationService";
 
-const STORAGE_KEY = "loan-reminder:notifications:v2";
-const CHANGE_EVENT = "notifications:change";
+export type { Notification, NotificationKind };
 
-let cachedRaw: string | null = null;
-let cachedList: Notification[] = SEED_NOTIFICATIONS;
-
-function parseRaw(raw: string | null): unknown {
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as unknown;
-  } catch {
-    return null;
-  }
-}
-
-function normalizeFeed(raw: unknown): Notification[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.map((r, i) => normalizeNotification(r, i));
-}
-
-function readList(): Notification[] {
-  if (!hasWindow()) return SEED_NOTIFICATIONS;
-  const raw = window.localStorage.getItem(STORAGE_KEY);
-  if (raw === cachedRaw) return cachedList;
-  const next = normalizeFeed(parseRaw(raw));
-  cachedRaw = raw;
-  cachedList = next.length > 0 ? next : SEED_NOTIFICATIONS;
-  return cachedList;
-}
-
-function subscribe(cb: () => void) {
-  if (!hasWindow()) return () => {};
-  const handler = () => {
-    cachedRaw = null;
-    cb();
-  };
-  window.addEventListener(CHANGE_EVENT, handler);
-  window.addEventListener("storage", handler);
-  return () => {
-    window.removeEventListener(CHANGE_EVENT, handler);
-    window.removeEventListener("storage", handler);
-  };
-}
-
-export function useNotifications(): {
-  notifications: Notification[];
-  unread: number;
-  ready: boolean;
-  markRead: (id: string) => Promise<void>;
-  markAllRead: () => Promise<void>;
-  deleteNotification: (id: string) => Promise<void>;
-  refresh: () => void;
-} {
-  const notifications = useSyncExternalStore(subscribe, readList, () => SEED_NOTIFICATIONS);
-  const ready = useSyncExternalStore(
-    () => () => {},
-    () => true,
-    () => false,
-  );
-  // `unread` is derived from the cached list. We recompute it from
-  // the same reference each call so React never sees a "changed"
-  // value unless the underlying list actually changes.
-  const unread = useSyncExternalStore(
-    subscribe,
-    () => countUnread(readList()),
-    () => 0,
-  );
-  const refresh = useCallback(() => {
-    cachedRaw = null;
-    if (hasWindow()) {
-      window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
-    }
-  }, []);
+export function useNotifications() {
+  const list = useNotificationsQuery();
+  const unread = useUnreadCountQuery();
+  const markReadM = useMarkReadMutation();
+  const markAllM = useMarkAllReadMutation();
   return {
-    notifications,
-    unread,
-    ready,
-    markRead,
-    markAllRead,
-    deleteNotification,
-    refresh,
+    notifications: (list.data ?? []) as Notification[],
+    unread: unread.data ?? 0,
+    ready: !list.isPending,
+    markRead: (id: string) => markReadM.mutateAsync({ id }),
+    markAllRead: () => markAllM.mutateAsync(),
+    /** Legacy API: deletes a single notification. The B4
+     *  routes don't expose a delete endpoint, so this is a
+     *  no-op kept for source compatibility. */
+    // Legacy delete API: kept for source compatibility. The B4
+    // route does not expose a delete endpoint, so this is a no-op.
+    deleteNotification: async () => undefined,
+    refresh: () => {
+      list.refetch();
+      unread.refetch();
+    },
+    isLoading: list.isLoading,
+    isError: list.isError,
+    error: list.error,
   };
 }
 
-function countUnread(list: Notification[]): number {
-  let n = 0;
-  for (let i = 0; i < list.length; i++) if (list[i].unread) n++;
-  return n;
-}
-
-// Keep the async getters re-exported for the few callers that need them.
-export { getNotifications, getUnreadCount, markAllRead, markRead };
+export { getNotifications, getUnreadCount } from "./useQueries";
+export { useNotificationsQuery, useUnreadCountQuery } from "./useQueries";
+export { queryKeys };

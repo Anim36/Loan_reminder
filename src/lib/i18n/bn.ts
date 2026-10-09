@@ -191,6 +191,8 @@ export const bn: Dictionary = {
     n === 1 ? "১ দিন বিলম্বিত" : `${n} দিন বিলম্বিত`, // uncertain — plural
   "loans.dueIn": (n) =>
     n === 1 ? "১ দিনের মধ্যে বকেয়া" : `${n} দিনের মধ্যে বকেয়া`, // uncertain — plural
+  "loans.dueToday": "আজ বকেয়া",
+  "loans.dueTomorrow": "আগামীকাল বকেয়া",
   "loans.partial": (paid, total) => `${total} থেকে ${paid} পরিশোধিত`,
   "loans.rescheduled": "পুনঃনির্ধারিত",
   "loans.empty.title": "কোনো ঋণ নেই",
@@ -238,6 +240,10 @@ export const bn: Dictionary = {
     "ঋণ সংরক্ষিত হয়েছে। রিমাইন্ডার নির্ধারিত।",
   "loanDetails.toast.markedPaid": "পরিশোধিত হিসেবে চিহ্নিত।",
   "loanDetails.toast.reminderSent": "রিমাইন্ডার পাঠানো হয়েছে।",
+  "loanDetails.toast.reminderQueued":
+    "রিমাইন্ডার সারিতে যুক্ত হয়েছে। (পাঠানো এখনও চালু নয় — লগ রেকর্ড করা হয়েছে।)",
+  "loanDetails.toast.paymentError":
+    "সেটি সংরক্ষণ করা যায়নি। আবার চেষ্টা করুন।",
   "loanDetails.toast.dueDateUpdated": "ফেরতের তারিখ আপডেট হয়েছে।",
   "loanDetails.toast.loanDeleted": "ঋণ মুছে ফেলা হয়েছে।",
   "loanDetails.toast.paymentDeleted": "পেমেন্ট মুছে ফেলা হয়েছে।",
@@ -650,6 +656,7 @@ export const bn: Dictionary = {
   "settings.fieldRequired": "এই ক্ষেত্রটি পূরণ করা আবশ্যক।",
   "settings.fieldInvalid": "একটি বৈধ মান দিন।",
   "settings.saveAria": "পরিবর্তন সংরক্ষণ",
+  "settings.saveFailed": "আপনার পরিবর্তন সংরক্ষণ করা যায়নি। আবার চেষ্টা করুন।",
   "settings.themeOptionAria": (label) => `থিম: ${label}`,
 
   // reports
@@ -1040,6 +1047,14 @@ export const bn: Dictionary = {
   "ui.reports.reliability": "বন্ধুদের নির্ভরযোগ্যতা",
   "ui.reports.upcoming": "এই সপ্তাহে বকেয়া",
   "ui.reports.upcomingEmpty": "পরবর্তী ৭ দিনে কিছু বকেয়া নেই।",
+  "ui.reports.since": (d) => `${d} থেকে`,
+  "ui.reports.allTime": "সব সময়কাল",
+  "ui.reports.outstandingHelper": "এখনও ফেরত পাওয়া বাকি",
+  "ui.reports.onTimeHelper": "নির্ধারিত তারিখে বা আগে পরিশোধিত",
+  "ui.reports.monthlyHelper": "প্রতি মাসের প্রবণতা",
+  "ui.reports.loans": "টি ঋণ",
+  "ui.reports.avgHelper": "সম্পূর্ণ পরিশোধিত ঋণের ভিত্তিতে",
+  "ui.reports.reliabilityHelper": "সাম্প্রতিক ঋণের ভিত্তিতে",
   "ui.reports.avgRepayTime": (d) =>
     d === 1
       ? "গড়ে ১ দিনে ফেরত"

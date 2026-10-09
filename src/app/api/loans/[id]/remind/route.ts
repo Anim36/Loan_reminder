@@ -178,7 +178,15 @@ export async function POST(req: NextRequest, next: { params: Promise<{ id: strin
         // DTO mapper import path consistent with sibling routes
         // when the reminder engine later embeds the loan.
         void todayInDhaka;
-        return created;
+        // Return the small envelope `{ queuedLogIds, delivered }`
+        // so the client can render an immediate "queued, sending
+        // not enabled yet" message and invalidate the history
+        // list. The raw rows are still in the DB; the page picks
+        // them up on the next refetch.
+        return {
+          queuedLogIds: created.map((r) => r.id),
+          delivered: created.length > 0,
+        };
       },
     },
     next.params,

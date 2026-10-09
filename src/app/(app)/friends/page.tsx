@@ -6,44 +6,60 @@
 // Lists every friend with their loan count, total lent, outstanding,
 // and a status badge showing the worst current loan (Overdue > Pending > Paid).
 // Desktop table + mobile stacked cards.
+//
+// Data: React Query (`useFriendsQuery`).
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Plus, Search } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { EmptyState, StatusBadge } from "@/components/ui";
-import { getFriends, type FriendSummary as FriendSummaryRow } from "@/services";
+import { EmptyState, StatusBadge, useToast } from "@/components/ui";
+import { useFriendsQuery } from "@/services/useQueries";
+import { ApiError } from "@/lib/api-client";
 import { formatMoney, formatOverlineDate } from "@/lib/format";
 import { PageHeader } from "@/components/layout/page-header";
 import { useToday } from "@/lib/use-today";
 import { useT } from "@/lib/i18n/LanguageProvider";
+import type { FriendListRow as FriendSummaryRow } from "@/lib/api/mappers";
 
 export default function FriendsPage() {
   const router = useRouter();
   const { t } = useT();
-  const [friends, setFriends] = useState<FriendSummaryRow[] | null>(null);
+  const toast = useToast();
   const [query, setQuery] = useState("");
   const today = useToday();
+  const friendsQ = useFriendsQuery();
+  const friends = friendsQ.data;
 
+  // Surface a translated toast when the friends list fetch
+  // fails. The previous code called `toast.show(...)` directly
+  // in the render body, which triggered
+  // "Cannot update a component (ToastProvider) while rendering a
+  // different component (FriendsPage)". The toast is now fired
+  // in a layout effect with a ref guard so a single error
+  // transition only enqueues one toast (no duplicate on the
+  // // subsequent re-render that React Query schedules).
+  const lastErrorRef = useRef<unknown>(null);
   useEffect(() => {
-    let cancelled = false;
-    getFriends().then((f) => {
-      if (!cancelled) setFriends(f);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    if (!friendsQ.isError) {
+      lastErrorRef.current = null;
+      return;
+    }
+    if (lastErrorRef.current === friendsQ.error) return;
+    lastErrorRef.current = friendsQ.error;
+    toast.show(t["ui.errorBoundary.body"]);
+  }, [friendsQ.isError, friendsQ.error, toast, t]);
 
   const visible = useMemo(() => {
     if (!friends) return [];
     const q = query.trim().toLowerCase();
     if (!q) return friends;
-    return friends.filter((f) =>
-      f.friend.name.toLowerCase().includes(q) ||
-      (f.friend.phone ?? "").includes(q),
+    return friends.filter(
+      (f) =>
+        f.friend.name.toLowerCase().includes(q) ||
+        (f.friend.phone ?? "").includes(q),
     );
   }, [friends, query]);
 
@@ -79,7 +95,22 @@ export default function FriendsPage() {
         </Button>
       </div>
 
-      {isEmpty ? (
+      {friendsQ.isError ? (
+        <div className="rounded-card border border-border bg-surface p-6 text-center text-helper">
+          <p className="text-status-overdue-text">
+            {friendsQ.error instanceof ApiError && friendsQ.error.code
+              ? t["ui.errorBoundary.body"]
+              : t["ui.errorBoundary.body"]}
+          </p>
+          <button
+            type="button"
+            onClick={() => friendsQ.refetch()}
+            className="mt-3 inline-flex items-center gap-2 rounded-pill border border-border px-4 py-2 text-helper font-medium text-text hover:border-brand-600"
+          >
+            {t["app.error.retry"]}
+          </button>
+        </div>
+      ) : isEmpty ? (
         <div className="rounded-card border border-border bg-surface shadow-card">
           <EmptyState
             type="Loans"
@@ -100,7 +131,9 @@ export default function FriendsPage() {
         </>
       )}
 
-      {friends === null ? <span className="sr-only">{t["ui.loadingFriends"]}</span> : null}
+      {friendsQ.isLoading ? (
+        <span className="sr-only">{t["ui.loadingFriends"]}</span>
+      ) : null}
     </section>
   );
 }

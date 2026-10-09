@@ -1,8 +1,9 @@
 // Barrel export for @/services.
 //
-// Keep this file in sync with the public surface every service module
-// exposes. Re-export from the underlying modules (rather than re-export
-// "*") so call sites stay tree-shakeable.
+// Re-export from the underlying modules (rather than re-export
+// "*") so call sites stay tree-shakeable. The B3/B4 migration
+// rewired each service to the API; the public names are kept
+// identical so pages, hooks, and tests don't have to change.
 
 export {
   addPayment,
@@ -13,34 +14,38 @@ export {
   deriveStatus,
   getLoan,
   getLoans,
+  getLoansPaged,
   markAsPaid,
   markFullyPaid,
   remapStatuses,
   remainingAmount,
   rescheduleLoan,
+  restoreLoan,
+  sendReminderNow,
   updateLoan,
 } from "./loanService";
 export { useLoans } from "./use-loans";
+export { useLoansQuery } from "./useQueries";
 
 export {
   buildLoanHistory,
-  FRIENDLY_SMS,
-  FIRM_SMS,
-  getLoanReminderHistory,
   getReminderHistory,
+  getReminderHistoryPaged,
   getReminderSettings,
-  NEUTRAL_SMS,
+  normalizeSettings,
   saveReminderSettings,
-  SEED as REMINDER_SEED,
   setTone,
   updateChannels,
   updateMessageLanguage,
   updateTemplate,
 } from "./reminderService";
+export { SEED as REMINDER_SEED } from "./reminderService";
 export type {
   ChannelDefaults,
   LocalizedTemplates,
   ReminderHistoryItem,
+  ReminderHistoryResponse,
+  ReminderHistoryFilters,
   ReminderSettings,
   ToneTemplates,
 } from "./reminderService";
@@ -49,29 +54,35 @@ export { useReminderSettings } from "./use-reminder-settings";
 
 export {
   createNotification,
-  deleteNotification,
   getNotifications,
   getUnreadCount,
   markAllRead,
   markRead,
+  notifyDueDateUpdated,
   notifyLoanCreated,
   notifyLoanPaid,
-  notifyReminderSent,
   notifyPaymentRecorded,
-  notifyDueDateUpdated,
-  subscribeNotifications,
+  notifyReminderSent,
   translateNotification,
 } from "./notificationService";
-export type { Notification, NotificationKind } from "./notificationService";
+export type {
+  Notification,
+  NotificationKind,
+  NotificationMessageKey,
+} from "./notificationService";
 export { useNotifications } from "./use-notifications";
 
 export {
+  changePassword,
+  deleteAccount,
+  getPreferences,
+  getProfile,
   getUserSettings,
   saveUserSettings,
   SEED as USER_SETTINGS_SEED,
-  subscribeUserSettings,
   updateBanglaNumerals,
   updateNotificationPrefs,
+  updatePreferences,
   updateProfile,
   updateTheme,
 } from "./settingsService";
@@ -84,26 +95,27 @@ export { useUserSettings } from "./use-user-settings";
 
 export {
   AuthError,
-  changePassword,
-  deleteAccount,
-  forgotPassword,
-  resetPassword,
   signIn,
   signOut,
   signUp,
+  forgotPassword,
+  resetPassword,
 } from "./authService";
 
 export {
   getFriend,
+  getFriendDetail,
   getFriendLoans,
   getFriendReminderHistory,
   getFriends,
 } from "./friendService";
-export type { FriendSummary } from "./friendService";
+export type { FriendListRow as FriendSummary, FriendDetailMapped } from "./friendService";
 
 export {
   computeReport,
+  downloadReportCsv,
   formatCsv,
   type ReportRange,
   type ReportSnapshot,
 } from "./reportService";
+export type { MonthlyBucket, ReliabilityRow, UpcomingDue } from "./reportService";

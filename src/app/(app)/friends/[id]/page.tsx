@@ -9,7 +9,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { use, useEffect, useState } from "react";
+import { use, useMemo } from "react";
 import {
   ArrowLeft,
   HandCoins,
@@ -21,12 +21,9 @@ import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { StatusBadge, SummaryCard, useToast } from "@/components/ui";
 import { PageHeader } from "@/components/layout/page-header";
-import {
-  getFriend,
-  getFriendLoans,
-  getFriendReminderHistory,
-  type FriendSummary,
-} from "@/services";
+import { useFriendQuery } from "@/services/useQueries";
+import { remapStatuses } from "@/services/loanService";
+import { ApiError } from "@/lib/api-client";
 import {
   daysBetween,
   formatDate,
@@ -48,29 +45,22 @@ export default function FriendDetailPage({
   const router = useRouter();
   const { t } = useT();
   const toast = useToast();
-  const [friend, setFriend] = useState<FriendSummary | null | "missing">(null);
-  const [loans, setLoans] = useState<Loan[]>([]);
-  const [reminders, setReminders] = useState<Awaited<ReturnType<typeof getFriendReminderHistory>>>([]);
   const today = useToday();
+  const q = useFriendQuery(id);
 
-  useEffect(() => {
-    let cancelled = false;
-    Promise.all([
-      getFriend(id),
-      getFriendLoans(id),
-      getFriendReminderHistory(id),
-    ]).then(([f, l, r]) => {
-      if (cancelled) return;
-      setFriend(f ?? "missing");
-      setLoans(l);
-      setReminders(r);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [id]);
+  // The friend-detail DTO already includes loans + reminder history.
+  // Re-derive statuses against `today` so a re-render that only
+  // changes `today` produces a fresh list with the new statuses.
+  const friend = q.data?.friend ?? null;
+  const totals = q.data?.totals;
+  const loans = useMemo(
+    () => remapStatuses(q.data?.loans ?? [], today),
+    [q.data?.loans, today],
+  );
+  const reminders = useMemo(() => q.data?.reminderHistory ?? [], [q.data]);
 
-  if (friend === "missing") {
+  const isMissing = q.isError && q.error instanceof ApiError && q.error.status === 404;
+  if (isMissing) {
     return (
       <section className="mx-auto flex w-full max-w-2xl flex-col items-center gap-4 px-6 py-16 text-center">
         <p className="eyebrow">{t["ui.notFound"]}</p>
@@ -91,7 +81,7 @@ export default function FriendDetailPage({
     );
   }
 
-  if (friend === null) {
+  if (!friend) {
     return (
       <div
         className="flex min-h-[40vh] flex-col gap-3 p-6 md:p-10"
@@ -117,11 +107,11 @@ export default function FriendDetailPage({
 
       {/* Page header — avatar + name (H1) + contact subtitle + New loan CTA */}
       <PageHeader
-        title={friend.friend.name}
+        title={friend.name}
         subtitle={
-          friend.friend.phone
-            ? `+880 ${friend.friend.phone}${friend.friend.email ? ` · ${friend.friend.email}` : ""}`
-            : friend.friend.email ?? t["ui.phoneNotOnFile"]
+          friend.phone
+            ? `+880 ${friend.phone}${friend.email ? ` · ${friend.email}` : ""}`
+            : friend.email ?? t["ui.phoneNotOnFile"]
         }
         action={
           <Button
@@ -139,15 +129,15 @@ export default function FriendDetailPage({
         <SummaryCard
           type={t["ui.friends.detail.summary.totalLent"]}
           label={t["ui.friends.detail.summary.totalLent"]}
-          amount={formatMoney(friend.totalLent)}
-          caption={t["ui.loansCountCaption"](friend.loanCount)}
+          amount={formatMoney(totals?.totalLent ?? 0)}
+          caption={t["ui.loansCountCaption"](totals?.loanCount ?? 0)}
         />
         <SummaryCard
           type={t["ui.friends.detail.summary.totalReceived"]}
           label={t["ui.friends.detail.summary.totalReceived"]}
-          amount={formatMoney(friend.totalRepaid)}
+          amount={formatMoney(totals?.totalRepaid ?? 0)}
           caption={
-            friend.totalRepaid > 0
+            (totals?.totalRepaid ?? 0) > 0
               ? t["ui.friends.detail.summary.paidBack"]
               : t["ui.friends.detail.summary.nothingRepaid"]
           }
@@ -155,11 +145,11 @@ export default function FriendDetailPage({
         <SummaryCard
           type={t["ui.friends.detail.summary.outstanding"]}
           label={t["ui.friends.detail.summary.outstanding"]}
-          amount={formatMoney(friend.outstanding)}
+          amount={formatMoney(totals?.outstanding ?? 0)}
           caption={
-            friend.worstStatus === "Overdue"
+            totals?.worstStatus === "Overdue"
               ? t["ui.friends.detail.summary.includesOverdue"]
-              : friend.worstStatus === "Pending"
+              : totals?.worstStatus === "Pending"
                 ? t["ui.friends.detail.summary.awaiting"]
                 : t["ui.friends.detail.summary.allSettled"]
           }
@@ -178,7 +168,7 @@ export default function FriendDetailPage({
         </div>
         {loans.length === 0 ? (
           <div className="rounded-card border border-border bg-surface p-6 text-center text-muted text-helper">
-            {t["ui.friends.detail.noLoans"](friend.friend.name)}
+            {t["ui.friends.detail.noLoans"](friend.name)}
           </div>
         ) : (
           <ul className="flex flex-col gap-3 md:gap-0 md:rounded-card md:border md:border-border md:bg-surface md:shadow-card md:overflow-hidden">
@@ -235,10 +225,10 @@ export default function FriendDetailPage({
                       : t["ui.friends.detail.emailReminder"]}
                   </span>
                   <span className="font-normal text-helper text-muted">
-                    {formatDateTime(r.sentAt)}
+                    {formatDateTime(r.sentAt ?? r.scheduledFor)}
                   </span>
                 </div>
-                <StatusBadge status={r.status === "Delivered" ? "Paid" : "Overdue"} />
+                <StatusBadge status={r.status === "Failed" ? "Overdue" : "Paid"} />
               </li>
             ))}
           </ul>
@@ -251,7 +241,7 @@ export default function FriendDetailPage({
           toast.show(t["ui.friendShortcutCopied"]);
           if (typeof navigator !== "undefined" && navigator.clipboard) {
             void navigator.clipboard.writeText(
-              `${window.location.origin}/friends/${friend.friend.id}`,
+              `${window.location.origin}/friends/${friend.id}`,
             );
           }
         }}

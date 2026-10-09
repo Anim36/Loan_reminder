@@ -61,5 +61,6 @@ export async function GET(req: NextRequest) {
         meta: { page: query.page, pageSize: query.pageSize, total },
       };
     },
+    listMode: true,
   });
 }

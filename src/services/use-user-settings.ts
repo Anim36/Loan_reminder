@@ -1,178 +1,127 @@
 "use client";
 
-// Client-only hook for the user-settings store. Caches the parsed
-// snapshot by the raw localStorage string so React never sees a
-// "changed" reference on every render. The first read runs the
-// normalizer (which migrates old shapes to the current v2 record and
-// writes the migrated value back), so subsequent reads are O(1).
+// `useUserSettings` — wraps the React Query user-settings
+// hook with the public surface the Settings page uses:
 //
-// Since the user can be signed in via Auth.js, the profile
-// (`name`/`phone`), language, theme, and Bangla-numerals flag are
-// also pushed to the server through `updateProfile` (PATCH
-// /api/auth/me). The localStorage copy is still written so the UI
-// stays consistent across reloads, but the server copy is the
-// source of truth for the next sign-in.
+//   { settings, ready, updateProfile, updateTheme,
+//     updateBanglaNumerals, updateNotificationPrefs,
+//     changePassword, deleteAccount, saveAll }
+//
+// Settings now live on the server; the localStorage cache is
+// gone. The hook returns a `UserSettings` shape that the form
+// code already consumes (top-level `displayName`, `phone`,
+// `email`, `theme`, `banglaNumerals`, `notifications.*`).
 
-import { useCallback, useSyncExternalStore } from "react";
+import { useEffect } from "react";
 import {
-  getUserSettings,
-  normalizeSettings,
-  saveUserSettings as saveUserSettingsAsync,
-  updateBanglaNumerals as updateBanglaNumeralsAsync,
-  updateNotificationPrefs as updateNotificationPrefsAsync,
-  updateProfile as updateProfileAsync,
-  updateTheme as updateThemeAsync,
-  type NotificationPrefs,
-  type ThemeChoice,
-  type UserSettings,
-} from "./settingsService";
-import { SEED } from "./settingsService";
-import { hasWindow } from "./storage";
-import {
-  changePassword as changePasswordApi,
-  deleteAccount as deleteAccountApi,
-  updateProfile as updateProfileServer,
-} from "./authService";
+  useUserSettingsQuery,
+  useUpdateProfileMutation,
+  useUpdatePreferencesMutation,
+  useChangePasswordMutation,
+  useDeleteAccountMutation,
+} from "./useQueries";
+import { useT } from "@/lib/i18n/LanguageProvider";
+import { useTheme } from "next-themes";
 
-const STORAGE_KEY = "loan-reminder:user-settings:v2";
-const CHANGE_EVENT = "user-settings:change";
+export type { NotificationPrefs, ThemeChoice, UserSettings } from "./settingsService";
 
-let cachedRaw: string | null = null;
-let cachedSettings: UserSettings = SEED;
-
-function parseRaw(raw: string | null): unknown {
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as unknown;
-  } catch {
-    return null;
-  }
-}
-
-function readAll(): UserSettings {
-  if (!hasWindow()) return SEED;
-  const raw = window.localStorage.getItem(STORAGE_KEY);
-  if (raw === cachedRaw) return cachedSettings;
-  const normalized = normalizeSettings(parseRaw(raw));
-  cachedRaw = raw;
-  cachedSettings = normalized;
-  return cachedSettings;
-}
-
-function subscribe(cb: () => void) {
-  if (!hasWindow()) return () => {};
-  const handler = () => {
-    cachedRaw = null;
-    cachedSettings = SEED;
-    cb();
-  };
-  window.addEventListener(CHANGE_EVENT, handler);
-  window.addEventListener("storage", handler);
-  return () => {
-    window.removeEventListener(CHANGE_EVENT, handler);
-    window.removeEventListener("storage", handler);
+/** Build the legacy flat settings shape the Settings page reads
+ *  from localStorage. Maps the server's `profile.*` / `preferences.*`
+ *  nesting back to the top-level `displayName` etc. fields. */
+function flatten(s: ReturnType<typeof useUserSettingsQuery>["data"] | undefined) {
+  const profile = s?.profile;
+  const prefs = s?.preferences;
+  return {
+    displayName: profile?.name ?? "—",
+    email: profile?.email ?? "",
+    phone: (profile?.phone ?? "").replace(/^\+880/, ""),
+    theme: prefs?.theme ?? "light",
+    banglaNumerals: prefs?.banglaNumerals ?? false,
+    notifications: {
+      emailOnPaid: prefs?.notifications.emailOnPaid ?? true,
+      emailOnOverdue: prefs?.notifications.emailOnOverdue ?? true,
+      weeklySummary: prefs?.notifications.weeklySummary ?? false,
+    },
   };
 }
 
-export function useUserSettings(): {
-  settings: UserSettings;
-  ready: boolean;
-  updateProfile: (patch: {
-    displayName?: string;
-    phone?: string;
-    email?: string;
-  }) => Promise<void>;
-  updateTheme: (theme: ThemeChoice) => Promise<void>;
-  updateBanglaNumerals: (enabled: boolean) => Promise<void>;
-  updateNotificationPrefs: (patch: Partial<NotificationPrefs>) => Promise<void>;
-  changePassword: (args: { current: string; next: string }) => Promise<{ ok: true }>;
-  deleteAccount: () => Promise<{ ok: true }>;
-  saveAll: (settings: UserSettings) => Promise<void>;
-} {
-  const settings = useSyncExternalStore(subscribe, readAll, () => SEED);
-  const ready = useSyncExternalStore(
-    () => () => {},
-    () => true,
-    () => false,
-  );
-  const updateProfile = useCallback(
-    async (patch: { displayName?: string; phone?: string; email?: string }) => {
-      // Local copy first so the form reflects the change
-      // immediately even if the server is slow or down.
-      await updateProfileAsync(patch);
-      // Server is the source of truth for next sign-in. We only
-      // forward the fields the server actually accepts (name,
-      // phone). Email changes still need a verification flow we
-      // haven't built yet, so they're localStorage-only.
-      try {
-        await updateProfileServer({
-          name: patch.displayName,
-          phone: patch.phone,
-        });
-      } catch (err) {
-        // Don't swallow — but don't fail the save either, the
-        // local copy is already updated. Re-throw so callers can
-        // show a "saved locally, sync failed" toast in the
-        // future.
-        console.warn("[useUserSettings] server profile sync failed", err);
-      }
-    },
-    [],
-  );
-  const updateTheme = useCallback(async (theme: ThemeChoice) => {
-    await updateThemeAsync(theme);
-    try {
-      await updateProfileServer({ theme });
-    } catch (err) {
-      console.warn("[useUserSettings] server theme sync failed", err);
-    }
-  }, []);
-  const updateBanglaNumerals = useCallback(async (enabled: boolean) => {
-    await updateBanglaNumeralsAsync(enabled);
-    try {
-      await updateProfileServer({ banglaNumerals: enabled });
-    } catch (err) {
-      console.warn("[useUserSettings] server numerals sync failed", err);
-    }
-  }, []);
-  const updateNotificationPrefs = useCallback(
-    async (patch: Partial<NotificationPrefs>) => {
-      // Notification prefs are not yet a server-side concern
-      // (no Preference table in the schema). Local-only.
-      await updateNotificationPrefsAsync(patch);
-    },
-    [],
-  );
-  const changePassword = useCallback(
-    async (args: { current: string; next: string }) => {
-      // Real backend call (Auth.js + Prisma) — succeeds
-      // silently on success, throws `AuthError` otherwise.
-      await changePasswordApi(args);
-      return { ok: true as const };
-    },
-    [],
-  );
-  const deleteAccount = useCallback(async () => {
-    // Real backend call. The route deletes the user, the
-    // cascading children, and the session cookie. The caller
-    // is expected to navigate to /login.
-    await deleteAccountApi();
-    return { ok: true as const };
-  }, []);
-  const saveAll = useCallback(async (next: UserSettings) => {
-    await saveUserSettingsAsync(next);
-  }, []);
+export function useUserSettings() {
+  const q = useUserSettingsQuery();
+  const updateProfile = useUpdateProfileMutation();
+  const updatePrefs = useUpdatePreferencesMutation();
+  const changePw = useChangePasswordMutation();
+  const deleteAcct = useDeleteAccountMutation();
+  const { setTheme } = useTheme();
+  const { lang } = useT();
+  // Mirror the persisted language to next-themes so a new tab
+  // (and the SSR cookie-driven first paint) doesn't disagree
+  // with the user-preference.
+  useEffect(() => {
+    if (lang) document.documentElement.lang = lang;
+  }, [lang]);
+
+  const settings = flatten(q.data);
+  // Keep next-themes in sync with the persisted `theme`
+  // preference so the first render is correct.
+  useEffect(() => {
+    if (!q.data) return;
+    setTheme(q.data.preferences.theme === "system" ? "light" : q.data.preferences.theme);
+  }, [q.data?.preferences.theme, setTheme, q.data]);
+
   return {
     settings,
-    ready,
-    updateProfile,
-    updateTheme,
-    updateBanglaNumerals,
-    updateNotificationPrefs,
-    changePassword,
-    deleteAccount,
-    saveAll,
+    ready: !q.isPending,
+    updateProfile: async (patch: {
+      displayName?: string;
+      phone?: string;
+      email?: string;
+    }) => {
+      // The legacy form allows editing the email locally but
+      // the B4 route doesn't expose an email update; the
+      // server route is `PATCH /api/auth/me` which the
+      // `authService.updateProfile` calls. We forward name +
+      // phone; email edits are stored nowhere today.
+      const out = await updateProfile.mutateAsync({
+        name: patch.displayName,
+        phone: patch.phone ? `+880${patch.phone.replace(/^0/, "").replace(/\D/g, "")}` : undefined,
+      });
+      return { ok: true as const, ...out };
+    },
+    updateTheme: async (theme: "light" | "dark" | "system") => {
+      await updatePrefs.mutateAsync({ theme });
+      setTheme(theme === "system" ? "light" : theme);
+    },
+    updateBanglaNumerals: async (enabled: boolean) => {
+      await updatePrefs.mutateAsync({ banglaNumerals: enabled });
+    },
+    updateNotificationPrefs: async (
+      patch: Partial<{
+        emailOnPaid: boolean;
+        emailOnOverdue: boolean;
+        weeklySummary: boolean;
+      }>,
+    ) => {
+      await updatePrefs.mutateAsync(patch);
+    },
+    changePassword: async (args: { current: string; next: string }) => {
+      await changePw.mutateAsync(args);
+      return { ok: true as const };
+    },
+    deleteAccount: async () => {
+      await deleteAcct.mutateAsync();
+      return { ok: true as const };
+    },
+    saveAll: async () => {
+      // The legacy form used this to save the *whole* settings
+      // object at once. Today we don't have a single endpoint
+      // for that; the individual `update*` calls handle the
+      // form's intent. This stub is kept so legacy imports
+      // still compile.
+    },
+    isLoading: q.isLoading,
+    isError: q.isError,
+    error: q.error,
   };
 }
 
-export { getUserSettings };
+export { getUserSettings } from "./settingsService";

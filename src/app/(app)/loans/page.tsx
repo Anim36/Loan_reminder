@@ -30,15 +30,18 @@ import {
 import { useLoans } from "@/services/use-loans";
 import {
   amountPaid,
-  deleteLoan as deleteLoanSvc,
-  markAsPaid,
   remainingAmount,
 } from "@/services/loanService";
+import {
+  useDeleteLoanMutation,
+  useMarkFullyPaidMutation,
+} from "@/services/useQueries";
 import {
   Avatar,
   Chip,
   EmptyState,
   Input,
+  QueryErrorState,
   StatusBadge,
   useToast,
 } from "@/components/ui";
@@ -58,7 +61,9 @@ export default function LoansPage() {
   const today = useToday();
   const { settings } = useUserSettings();
   const numeralMode = settings.banglaNumerals ? "bn" : "latin";
-  const { loansByStatus, ready } = useLoans();
+  const { loansByStatus, ready, refresh, isError, error } = useLoans();
+  const deleteLoanM = useDeleteLoanMutation();
+  const markPaidM = useMarkFullyPaidMutation();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("All");
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -83,6 +88,25 @@ export default function LoansPage() {
 
   const isEmpty = loansByStatus.length === 0;
   const filteredEmpty = !isEmpty && visible.length === 0;
+
+  async function handleDelete(loanId: string) {
+    try {
+      await deleteLoanM.mutateAsync(loanId);
+      // Refresh cached list and dashboard summaries.
+      void refresh();
+    } catch {
+      /* toast handled by the mutation's error state */
+    }
+  }
+
+  async function handleMarkPaid(loanId: string) {
+    try {
+      await markPaidM.mutateAsync(loanId);
+      void refresh();
+    } catch {
+      /* same */
+    }
+  }
 
   return (
     <section
@@ -135,7 +159,14 @@ export default function LoansPage() {
 
       {/* Body */}
       <div className="flex flex-col gap-3">
-        {isEmpty ? (
+        {isError ? (
+          <QueryErrorState
+            error={error}
+            onRetry={() => {
+              void refresh();
+            }}
+          />
+        ) : isEmpty ? (
           <div className="rounded-card border border-border bg-surface p-6 shadow-card">
             <EmptyState
               type="Loans"
@@ -156,6 +187,8 @@ export default function LoansPage() {
               numeralMode={numeralMode}
               lang={lang}
               t={t}
+              onMarkAsPaid={handleMarkPaid}
+              onDelete={handleDelete}
             />
             <MobileCards
               loans={visible}
@@ -165,6 +198,8 @@ export default function LoansPage() {
               numeralMode={numeralMode}
               lang={lang}
               t={t}
+              onMarkAsPaid={handleMarkPaid}
+              onDelete={handleDelete}
             />
           </>
         )}
@@ -187,6 +222,8 @@ function DesktopTable({
   numeralMode,
   lang,
   t,
+  onMarkAsPaid,
+  onDelete,
 }: {
   loans: Loan[];
   today: Date;
@@ -195,6 +232,8 @@ function DesktopTable({
   numeralMode: "latin" | "bn";
   lang: "en" | "bn";
   t: ReturnType<typeof useT>["t"];
+  onMarkAsPaid: (id: string) => void;
+  onDelete: (id: string) => void;
 }) {
   const toast = useToast();
 
@@ -287,11 +326,13 @@ function DesktopTable({
               open={openMenuId === loan.id}
               setOpen={(v) => setOpenMenuId(v ? loan.id : null)}
               onMarkAsPaid={() => {
-                markAsPaid(loan.id).then(() => toast.show(t["loanDetails.toast.markedPaid"]));
+                onMarkAsPaid(loan.id);
+                toast.show(t["loanDetails.toast.markedPaid"]);
                 setOpenMenuId(null);
               }}
               onDelete={() => {
-                deleteLoanSvc(loan.id).then(() => toast.show(t["loanDetails.toast.loanDeleted"]));
+                onDelete(loan.id);
+                toast.show(t["loanDetails.toast.loanDeleted"]);
                 setOpenMenuId(null);
               }}
               t={t}
@@ -315,6 +356,8 @@ function MobileCards({
   numeralMode,
   lang,
   t,
+  onMarkAsPaid,
+  onDelete,
 }: {
   loans: Loan[];
   today: Date;
@@ -323,6 +366,8 @@ function MobileCards({
   numeralMode: "latin" | "bn";
   lang: "en" | "bn";
   t: ReturnType<typeof useT>["t"];
+  onMarkAsPaid: (id: string) => void;
+  onDelete: (id: string) => void;
 }) {
   const toast = useToast();
   return (
@@ -391,11 +436,13 @@ function MobileCards({
                   open={openMenuId === loan.id}
                   setOpen={(v) => setOpenMenuId(v ? loan.id : null)}
                   onMarkAsPaid={() => {
-                    markAsPaid(loan.id).then(() => toast.show(t["loanDetails.toast.markedPaid"]));
+                    onMarkAsPaid(loan.id);
+                    toast.show(t["loanDetails.toast.markedPaid"]);
                     setOpenMenuId(null);
                   }}
                   onDelete={() => {
-                    deleteLoanSvc(loan.id).then(() => toast.show(t["loanDetails.toast.loanDeleted"]));
+                    onDelete(loan.id);
+                    toast.show(t["loanDetails.toast.loanDeleted"]);
                     setOpenMenuId(null);
                   }}
                   t={t}

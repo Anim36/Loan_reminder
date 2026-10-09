@@ -122,6 +122,48 @@ export interface Dictionary {
   "dashboard.totalLent": string;
   "dashboard.totalReceived": string;
 
+  // ── errors ──────────────────────────────────────────────────────────
+  "errors.api.amount_invalid": string;
+  "errors.api.amount_too_large": string;
+  "errors.api.amount_too_small": string;
+  "errors.api.conflict": string;
+  "errors.api.consent_required": string;
+  "errors.api.due_before_given": string;
+  "errors.api.due_date_change_not_allowed": string;
+  "errors.api.due_date_invalid": string;
+  "errors.api.due_date_unchanged": string;
+  "errors.api.due_not_after_today": string;
+  "errors.api.empty_patch": string;
+  "errors.api.forbidden": string;
+  "errors.api.friend_not_found": string;
+  "errors.api.friend_opted_out": string;
+  "errors.api.given_date_invalid": string;
+  "errors.api.invalid_json": string;
+  "errors.api.language_invalid": string;
+  "errors.api.loan_already_paid": string;
+  "errors.api.loan_not_found": string;
+  "errors.api.method_invalid": string;
+  "errors.api.no_channel_enabled": string;
+  "errors.api.not_found": string;
+  "errors.api.notification_not_found": string;
+  "errors.api.pagination_invalid": string;
+  "errors.api.payment_date_before_given": string;
+  "errors.api.payment_date_future": string;
+  "errors.api.payment_not_found": string;
+  "errors.api.payment_overflow": string;
+  "errors.api.phone_invalid": string;
+  "errors.api.rate_limited": string;
+  "errors.api.reminder_cooldown": string;
+  "errors.api.restore_window_expired": string;
+  "errors.api.server_error": string;
+  "errors.api.template_too_long": string;
+  "errors.api.timing_invalid": string;
+  "errors.api.tone_invalid": string;
+  "errors.api.unauthorized": string;
+  "errors.api.unique_violation": string;
+  "errors.api.unknown_placeholder": string;
+  "errors.api.validation_error": string;
+
   // ── form ────────────────────────────────────────────────────────────
   "form.amount": string;
   "form.amountHelper": string;
@@ -284,7 +326,9 @@ export interface Dictionary {
   "loanDetails.toast.loanSaved": string;
   "loanDetails.toast.markedPaid": string;
   "loanDetails.toast.paymentDeleted": string;
+  "loanDetails.toast.paymentError": string;
   "loanDetails.toast.paymentRecorded": string;
+  "loanDetails.toast.reminderQueued": string;
   "loanDetails.toast.reminderSent": string;
   "loanDetails.unknownDate": string;
   "loanDetails.unknownFriend": string;
@@ -297,6 +341,8 @@ export interface Dictionary {
   "loans.chip.pending": string;
   "loans.count": (n: unknown) => string;
   "loans.dueIn": (n: unknown) => string;
+  "loans.dueToday": string;
+  "loans.dueTomorrow": string;
   "loans.empty.body": string;
   "loans.empty.title": string;
   "loans.lastMonth": string;
@@ -377,48 +423,6 @@ export interface Dictionary {
   "notif.paymentFully.title": string;
   "notif.reminderSent.body": (tone: unknown, channel: unknown) => string;
   "notif.reminderSent.title": string;
-
-  // ── errors.api — REST API error envelopes (B4) ─────────────────────
-  "errors.api.unauthorized": string;
-  "errors.api.forbidden": string;
-  "errors.api.not_found": string;
-  "errors.api.conflict": string;
-  "errors.api.rate_limited": string;
-  "errors.api.server_error": string;
-  "errors.api.invalid_json": string;
-  "errors.api.validation_error": string;
-  "errors.api.unique_violation": string;
-  "errors.api.loan_not_found": string;
-  "errors.api.friend_not_found": string;
-  "errors.api.payment_not_found": string;
-  "errors.api.amount_invalid": string;
-  "errors.api.amount_too_small": string;
-  "errors.api.amount_too_large": string;
-  "errors.api.phone_invalid": string;
-  "errors.api.given_date_invalid": string;
-  "errors.api.due_date_invalid": string;
-  "errors.api.due_before_given": string;
-  "errors.api.due_not_after_today": string;
-  "errors.api.due_date_unchanged": string;
-  "errors.api.consent_required": string;
-  "errors.api.no_channel_enabled": string;
-  "errors.api.friend_opted_out": string;
-  "errors.api.loan_already_paid": string;
-  "errors.api.payment_overflow": string;
-  "errors.api.payment_date_future": string;
-  "errors.api.payment_date_before_given": string;
-  "errors.api.restore_window_expired": string;
-  "errors.api.reminder_cooldown": string;
-  "errors.api.due_date_change_not_allowed": string;
-  "errors.api.method_invalid": string;
-  "errors.api.tone_invalid": string;
-  "errors.api.language_invalid": string;
-  "errors.api.timing_invalid": string;
-  "errors.api.pagination_invalid": string;
-  "errors.api.notification_not_found": string;
-  "errors.api.empty_patch": string;
-  "errors.api.template_too_long": string;
-  "errors.api.unknown_placeholder": string;
 
   // ── notifications ───────────────────────────────────────────────────
   "notifications.aria.unread": string;
@@ -610,6 +614,7 @@ export interface Dictionary {
   "settings.reportsLink": string;
   "settings.save": string;
   "settings.saveAria": string;
+  "settings.saveFailed": string;
   "settings.security": string;
   "settings.securityDesc": string;
   "settings.subtitle": string;
@@ -1059,6 +1064,8 @@ export interface Dictionary {
   "ui.reportRangeAll": string;
   "ui.reportRangeAria": string;
   "ui.reportRangeExport": string;
+  "ui.reports.allTime": string;
+  "ui.reports.avgHelper": string;
   "ui.reports.avgRepayTime": (d: unknown) => string;
   "ui.reports.chartAria": string;
   "ui.reports.empty.body": string;
@@ -1068,12 +1075,18 @@ export interface Dictionary {
   "ui.reports.lent": string;
   "ui.reports.lentVsReceived": string;
   "ui.reports.lentVsReceivedTable": string;
+  "ui.reports.loans": string;
   "ui.reports.month": string;
+  "ui.reports.monthlyHelper": string;
+  "ui.reports.onTimeHelper": string;
+  "ui.reports.outstandingHelper": string;
   "ui.reports.received": string;
   "ui.reports.reliability": string;
   "ui.reports.reliability.always": string;
   "ui.reports.reliability.often": string;
   "ui.reports.reliability.sometimes": string;
+  "ui.reports.reliabilityHelper": string;
+  "ui.reports.since": (d: unknown) => string;
   "ui.reports.status.overdue": string;
   "ui.reports.status.paid": string;
   "ui.reports.status.pending": string;

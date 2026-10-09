@@ -40,8 +40,12 @@ import { PageHeader } from "@/components/layout/page-header";
 import { formatMoney, formatDate as formatDateLocalized } from "@/lib/format";
 import { useToday } from "@/lib/use-today";
 import { useT } from "@/lib/i18n/LanguageProvider";
-import { createLoan, updateLoan } from "@/services/loanService";
-import { notifyLoanCreated } from "@/services/notificationService";
+import { useTranslateApiError } from "@/lib/useApiError";
+import { ApiError } from "@/lib/api-client";
+import {
+  useCreateLoanMutation,
+  useUpdateLoanMutation,
+} from "@/services/useQueries";
 import type { Loan, Tone } from "@/types";
 
 /* -----------------------------------------------------------------------------
@@ -171,11 +175,22 @@ export function LoanForm({ mode, initial }: LoanFormProps) {
   const router = useRouter();
   const toast = useToast();
   const { t, lang } = useT();
+  // Translates ApiError → user-visible string. The page-side `catch`
+  // passes the thrown error here; the same helper is used for the
+  // toast AND for inline field messages (when the API returns a
+  // `fields` map from a 422).
+  const translateApiError = useTranslateApiError();
 
   // Stable "today" via the shared hook — returns a Date object that
   // doesn't change across renders on the same day.
   const todayDate = useToday();
   const today = useMemo(() => toIsoDate(todayDate), [todayDate]);
+
+  // React-Query mutations. The `onSuccess` of `useCreateLoanMutation`
+  // already invalidates loans + dashboard + reports, so the rest of
+  // the app picks up the new row on the next render.
+  const createLoanM = useCreateLoanMutation();
+  const updateLoanM = useUpdateLoanMutation();
 
   // Form state
   const [name, setName] = useState<string>(initial?.friend.name ?? "");
@@ -203,6 +218,11 @@ export function LoanForm({ mode, initial }: LoanFormProps) {
     "default" | "en" | "bn"
   >(initial?.messageLanguage ?? "default");
   const [submitting, setSubmitting] = useState<boolean>(false);
+  // Server-side field errors. We merge these with the live
+  // local-validation errors at render time so the user sees both
+  // kinds of feedback inline. Cleared on every successful submit
+  // and when the user edits a field.
+  const [apiErrors, setApiErrors] = useState<FormErrors>({});
 
   // Validation (live, never blocking typing). We resolve the i18n keys
   // returned by zod into localized strings so the user sees the right
@@ -253,24 +273,24 @@ export function LoanForm({ mode, initial }: LoanFormProps) {
 
   const isValid = Object.keys(errors).length === 0;
 
+  // The live-validation errors and the server-side errors are
+  // shown in the same place. The server's error wins when both
+  // exist for a field (so the user can see the real reason even
+  // when their local validation passed).
+  const fieldError = (key: keyof FormValues): string | undefined =>
+    apiErrors[key] ?? errors[key];
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!isValid || submitting) return;
     setSubmitting(true);
+    setApiErrors({});
     try {
       const numericAmount = Number(amount.replace(/,/g, ""));
-      const friendIdSlug =
-        initial?.friend.id ??
-        (name
-          .trim()
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/(^-|-$)/g, "") || "friend");
       const effectiveDateGiven = dateGiven || today;
       if (mode === "create") {
-        const created = await createLoan({
+        const created = await createLoanM.mutateAsync({ body: {
           friend: {
-            id: friendIdSlug,
             name: name.trim(),
             phone: phone.trim(),
             ...(emailReminders ? { email: emailAddress.trim() } : {}),
@@ -284,14 +304,12 @@ export function LoanForm({ mode, initial }: LoanFormProps) {
           consent,
           messageLanguage:
             messageLanguage === "default" ? undefined : messageLanguage,
-        });
+          } });
         toast.show(t["ui.loanForm.saved"]);
-        notifyLoanCreated(created);
-        router.push(`/loans/${created.id}`);
+        router.push(`/loans/${created.loan.id}`);
       } else if (initial) {
-        const updated = await updateLoan(initial.id, {
+        const updated = await updateLoanM.mutateAsync({ id: initial.id, patch: {
           friend: {
-            id: initial.friend.id,
             name: name.trim(),
             phone: phone.trim(),
             ...(emailReminders ? { email: emailAddress.trim() } : {}),
@@ -305,12 +323,48 @@ export function LoanForm({ mode, initial }: LoanFormProps) {
           consent,
           messageLanguage:
             messageLanguage === "default" ? undefined : messageLanguage,
-        });
+        } });
         toast.show(t["ui.loanForm.saved"]);
         router.push(`/loans/${updated?.id ?? initial.id}`);
       }
-    } catch {
-      toast.show(t["ui.loanForm.failed"]);
+    } catch (err) {
+      // Log the raw cause for the developer. The user never sees this.
+      console.error("[loan-form] save failed:", err);
+      if (err instanceof ApiError) {
+        // Map server field errors (e.g. { amount: ["amount_too_small"] })
+        // to the form's field keys. The wire uses paths like
+        // "friend.name" or "amount"; the form uses "name", "phone",
+        // "amount", "dateGiven", "dueDate", "consent", "emailAddress".
+        if (err.fields) {
+          const next: FormErrors = {};
+          for (const [path, list] of Object.entries(err.fields)) {
+            if (!list || list.length === 0) continue;
+            const first = list[0];
+            const dictKey = `errors.api.${first}` as keyof typeof t;
+            const msg = (t[dictKey] as unknown as string) ?? first;
+            const tail = path.split(".").pop() ?? path;
+            const formKey = ((): keyof FormValues => {
+              if (tail === "name") return "name";
+              if (tail === "phone") return "phone";
+              if (tail === "amount") return "amount";
+              if (tail === "givenDate") return "dateGiven";
+              if (tail === "dueDate") return "dueDate";
+              if (tail === "consentConfirmed") return "consent";
+              if (tail === "email") return "emailAddress";
+              if (tail === "reminderTimings") return "sms";
+              return tail as keyof FormValues;
+            })();
+            if (!next[formKey]) next[formKey] = msg;
+          }
+          setApiErrors(next);
+        }
+        // Toast shows the *first* field error (or the top-level code)
+        // — translated, never the raw English string.
+        toast.show(translateApiError(err, "ui.loanForm.failed"));
+      } else {
+        // Not an ApiError — generic translation via the dictionary.
+        toast.show(translateApiError(err, "ui.loanForm.failed"));
+      }
       setSubmitting(false);
     }
   }
@@ -375,7 +429,7 @@ export function LoanForm({ mode, initial }: LoanFormProps) {
                 value={name}
                 onChange={setName}
                 placeholder={t["ui.loanForm.namePlaceholder"]}
-                error={errors.name}
+                error={fieldError("name")}
               />
             </div>
 
@@ -389,7 +443,7 @@ export function LoanForm({ mode, initial }: LoanFormProps) {
                 onChange={setPhone}
                 placeholder={t["ui.phonePlaceholder"]}
                 prefix="+880"
-                error={errors.phone}
+                error={fieldError("phone")}
                 inputMode="numeric"
               />
             </div>
@@ -404,7 +458,7 @@ export function LoanForm({ mode, initial }: LoanFormProps) {
                 onChange={setEmailAddress}
                 placeholder={t["ui.emailPlaceholder"]}
                 disabled={!emailReminders}
-                error={emailReminders ? errors.emailAddress : undefined}
+                error={emailReminders ? fieldError("emailAddress") : undefined}
                 helperText={
                   emailReminders
                     ? undefined
@@ -430,7 +484,7 @@ export function LoanForm({ mode, initial }: LoanFormProps) {
                 onChange={setAmount}
                 placeholder="5,000"
                 prefix="৳"
-                error={errors.amount}
+                error={fieldError("amount")}
                 inputMode="decimal"
                 preview={
                   Number(amount.replace(/,/g, "")) > 0
@@ -457,9 +511,9 @@ export function LoanForm({ mode, initial }: LoanFormProps) {
                   onChange={(d) => setDateGiven(toIsoDate(d))}
                   placeholder={t["ui.loanForm.dateGiven.placeholder"]}
                 />
-                {errors.dateGiven ? (
+                {fieldError("dateGiven") ? (
                   <p className="font-normal text-helper text-status-overdue-text">
-                    {errors.dateGiven}
+                    {fieldError("dateGiven")}
                   </p>
                 ) : dateGiven ? (
                   <p className="font-normal text-helper text-muted">
@@ -478,9 +532,9 @@ export function LoanForm({ mode, initial }: LoanFormProps) {
                   onChange={(d) => setDueDate(toIsoDate(d))}
                   placeholder={t["ui.loanForm.dueDate.placeholder"]}
                 />
-                {errors.dueDate ? (
+                {fieldError("dueDate") ? (
                   <p className="font-normal text-helper text-status-overdue-text">
-                    {errors.dueDate}
+                    {fieldError("dueDate")}
                   </p>
                 ) : dueDate ? (
                   <p className="font-normal text-helper text-muted">
@@ -604,9 +658,9 @@ export function LoanForm({ mode, initial }: LoanFormProps) {
                   privacy: t["ui.loanForm.privacyIntro"],
                 })}
               </p>
-              {errors.consent ? (
+              {fieldError("consent") ? (
                 <p className="font-normal text-helper text-status-overdue-text">
-                  {errors.consent}
+                  {fieldError("consent")}
                 </p>
               ) : null}
             </div>

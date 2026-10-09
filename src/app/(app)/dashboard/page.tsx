@@ -40,7 +40,12 @@ import {
   remainingAmount,
 } from "@/services/loanService";
 import { useLoans } from "@/services/use-loans";
-import { Chip, EmptyState, SummaryCard } from "@/components/ui";
+import {
+  Chip,
+  EmptyState,
+  QueryErrorState,
+  SummaryCard,
+} from "@/components/ui";
 import { PageHeader } from "@/components/layout/page-header";
 import { useToday } from "@/lib/use-today";
 import {
@@ -72,7 +77,12 @@ function Dashboard() {
   const today = useToday();
   const { settings } = useUserSettings();
   const numeralMode = settings.banglaNumerals ? "bn" : "latin";
-  const { loansByStatus, ready } = useLoans();
+  // The dashboard's summary numbers and recent-loans list both come
+  // from `useLoans()`. If the request failed, `loansByStatus` is `[]`
+  // and we'd otherwise show "no loans yet" — which is misleading.
+  // We branch on `isError` to render a real error state with a
+  // retry button instead.
+  const { loansByStatus, ready, isError, error, refresh } = useLoans();
   const [filter, setFilter] = useState<Filter>("All");
 
   // ---- Derived values -------------------------------------------
@@ -146,11 +156,23 @@ function Dashboard() {
         }
       />
 
-      {/* Summary cards */}
-      <div
-        data-node-id="10:3912"
-        className="grid w-full grid-cols-2 gap-3 lg:grid-cols-4"
-      >
+      {/* When the loans request failed, we replace the summary
+       *  cards + list with a single error block so the user knows
+       *  the empty state is a real failure, not "no loans yet". */}
+      {isError ? (
+        <QueryErrorState
+          error={error}
+          onRetry={() => {
+            void refresh();
+          }}
+        />
+      ) : (
+        <>
+          {/* Summary cards */}
+          <div
+            data-node-id="10:3912"
+            className="grid w-full grid-cols-2 gap-3 lg:grid-cols-4"
+          >
         <SummaryCard
           type="Total Lent"
           label={t["dashboard.totalLent"]}
@@ -275,6 +297,9 @@ function Dashboard() {
           </ul>
         )}
       </div>
+
+      </>
+      )}
 
       {/* Floating add loan pill */}
       <Link

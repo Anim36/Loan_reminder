@@ -36,21 +36,21 @@ import {
   Send,
   Trash2,
 } from "lucide-react";
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useMemo, useState } from "react";
 import {
-  addPayment,
   amountPaid as sumPayments,
-  deleteLoan as removeLoan,
-  deletePayment as removePayment,
-  getLoan,
-  markFullyPaid as markFullyPaidAsync,
   remainingAmount,
-  rescheduleLoan,
 } from "@/services/loanService";
 import {
-  notifyPaymentRecorded,
-  notifyDueDateUpdated,
-} from "@/services/notificationService";
+  useAddPaymentMutation,
+  useDeleteLoanMutation,
+  useDeletePaymentMutation,
+  useLoanQuery,
+  useMarkFullyPaidMutation,
+  useRescheduleLoanMutation,
+  useSendReminderMutation,
+} from "@/services/useQueries";
+import { ApiError } from "@/lib/api-client";
 import {
   Avatar,
   Button,
@@ -118,7 +118,6 @@ function LoanDetails({ id }: { id: string }) {
   const { t, lang } = useT();
   const today = useToday();
   const numMode = "latin";
-  const [loan, setLoan] = useState<Loan | null | undefined>(undefined);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
@@ -133,28 +132,18 @@ function LoanDetails({ id }: { id: string }) {
   const [rescheduleOpenCount, setRescheduleOpenCount] = useState(0);
   const [deletePaymentCount, setDeletePaymentCount] = useState(0);
 
-  // Fetch the loan on mount, then refresh on `loans:change` and
-  // `storage` events. Kept in an effect (not in `getSnapshot`) so React
-  // never sees a "changed" reference mid-render.
-  useEffect(() => {
-    let cancelled = false;
-    function refresh() {
-      void getLoan(id).then((l) => {
-        if (cancelled) return;
-        setLoan(l);
-      });
-    }
-    refresh();
-    window.addEventListener("loans:change", refresh);
-    window.addEventListener("storage", refresh);
-    return () => {
-      cancelled = true;
-      window.removeEventListener("loans:change", refresh);
-      window.removeEventListener("storage", refresh);
-    };
-  }, [id]);
+  // React Query owns the cache; the page just renders from it.
+  const loanQ = useLoanQuery(id);
+  const addPaymentM = useAddPaymentMutation();
+  const deletePaymentM = useDeletePaymentMutation();
+  const markPaidM = useMarkFullyPaidMutation();
+  const rescheduleM = useRescheduleLoanMutation();
+  const deleteLoanM = useDeleteLoanMutation();
+  const sendReminderM = useSendReminderMutation();
 
-  if (loan === null) {
+  const loan = loanQ.data;
+  const isMissing = loanQ.isError && loanQ.error instanceof ApiError && loanQ.error.status === 404;
+  if (isMissing) {
     return (
       <NotFound
         onBack={() => router.push("/loans")}
@@ -162,7 +151,7 @@ function LoanDetails({ id }: { id: string }) {
       />
     );
   }
-  if (loan === undefined) {
+  if (!loan) {
     return <LoanDetailsSkeleton />;
   }
 
@@ -184,63 +173,70 @@ function LoanDetails({ id }: { id: string }) {
     method: PaymentMethod;
     note?: string;
   }) {
-    const updated = await addPayment(loan!.id, args);
-    if (!updated) return;
-    const newBalance = remainingAmount(updated);
-    const fullyPaid = newBalance === 0;
-    notifyPaymentRecorded({
-      loan: updated,
-      amount: args.amount,
-      remaining: newBalance,
-      fullyPaid,
-    });
-    show(t["loanDetails.toast.paymentRecorded"]);
-    setPaymentOpen(false);
+    try {
+      await addPaymentM.mutateAsync({ loanId: id, ...args });
+      show(t["loanDetails.toast.paymentRecorded"]);
+      setPaymentOpen(false);
+    } catch (err) {
+      show(t["loanDetails.toast.paymentError"]);
+      throw err;
+    }
   }
 
   async function handleDeletePayment(paymentId: string) {
-    const updated = await removePayment(loan!.id, paymentId);
-    if (!updated) return;
-    show(t["loanDetails.toast.paymentDeleted"]);
-    setDeletingPaymentId(null);
+    try {
+      await deletePaymentM.mutateAsync({ loanId: id, paymentId });
+      show(t["loanDetails.toast.paymentDeleted"]);
+      setDeletingPaymentId(null);
+    } catch {
+      show(t["loanDetails.toast.paymentError"]);
+    }
   }
 
   async function handleMarkFullyPaid() {
-    const updated = await markFullyPaidAsync(loan!.id);
-    if (!updated) return;
-    notifyPaymentRecorded({
-      loan: updated,
-      amount: updated.amount,
-      remaining: 0,
-      fullyPaid: true,
-    });
-    show(t["loanDetails.toast.markedPaid"]);
+    try {
+      await markPaidM.mutateAsync(id);
+      show(t["loanDetails.toast.markedPaid"]);
+    } catch {
+      show(t["loanDetails.toast.paymentError"]);
+    }
   }
 
   async function handleReschedule(args: {
     to: string;
     reason?: string;
   }) {
-    const updated = await rescheduleLoan(loan!.id, args);
-    if (!updated) return;
-    notifyDueDateUpdated({
-      loan: updated,
-      from: loan!.dueDate,
-      to: args.to,
-    });
-    show(t["loanDetails.toast.dueDateUpdated"]);
-    setRescheduleOpen(false);
+    try {
+      await rescheduleM.mutateAsync({ id, ...args });
+      show(t["loanDetails.toast.dueDateUpdated"]);
+      setRescheduleOpen(false);
+    } catch {
+      show(t["loanDetails.toast.paymentError"]);
+    }
   }
 
   async function handleDeleteLoan() {
-    await removeLoan(loan!.id);
-    show(t["loanDetails.toast.loanDeleted"]);
-    router.push("/loans");
+    try {
+      await deleteLoanM.mutateAsync(id);
+      show(t["loanDetails.toast.loanDeleted"]);
+      router.push("/loans");
+    } catch {
+      show(t["loanDetails.toast.paymentError"]);
+    }
   }
 
-  function handleSendReminder() {
-    show(t["loanDetails.toast.reminderSent"]);
-    setReminderOpen(false);
+  async function handleSendReminder() {
+    try {
+      const res = await sendReminderM.mutateAsync(id);
+      show(
+        res.delivered
+          ? t["loanDetails.toast.reminderSent"]
+          : t["loanDetails.toast.reminderQueued"],
+      );
+      setReminderOpen(false);
+    } catch {
+      show(t["loanDetails.toast.paymentError"]);
+    }
   }
 
   return (
