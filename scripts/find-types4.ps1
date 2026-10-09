@@ -1,0 +1,6 @@
+$lines = Get-Content "D:/Loan_Reminder/src/lib/i18n/types.ts"
+for ($i = 0; $i -lt $lines.Count; $i++) {
+  if ($lines[$i] -match "dashboard.activeLoans|dashboard.paidBack|dashboard.awaiting|dashboard.pastDue|dashboard.overdueNotice|dashboard.paidOn|dashboard.goodDay|dashboard.greeting|loans.overdueBy|loans.dueIn|loans.count|loans.partial|loansList.partial|loansList.count|loansList.overdueBy|loansList.dueIn|friends.loanCount|notif.paid|notif.overdue|notif.dueSoon|notif.payment|loanDetails.delete|loanDetails.remaining|loanDetails.paid|loanDetails.deleteBody|loanDetails.timelinePayment|loanDetails.timelineReschedule|loanDetails.timelinePaid|loanDetails.timelineUpcoming|loanDetails.loanGiven|loanDetails.deleteTitle|loanDetails.deletePaymentBody|loanDetails.overdueBy|loanDetails.dueIn|loanDetails.loanGivenNative|reports.avgRepayTime|reports.upcomingNext|reliability.always|loanDetails.amountRemaining|loanDetails.aria.progress|loanDetails.aria.status|loanDetails.status.aria|repayment.methodAria|repayment.methodAria|methodChipAria|loanDetails.loanGiven|common.ago|common.hoursAgo|common.daysAgo|common.unreadCount|notif.reminderSent|notif.dueDateUpdated") {
+    Write-Output ("{0}: {1}" -f ($i + 1), $lines[$i])
+  }
+}

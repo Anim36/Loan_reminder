@@ -1,0 +1,1 @@
+Select-String -Path "D:\Loan_Reminder\src\app\(app)\loans\page.tsx" -Pattern "loans\.(chip|sort|menu|newLoan|searchPlaceholder|loadingAria|row|actionRowAria|lastMonth|thisMonth|subtitle|empty|title|overdueBy|dueIn|partial|rescheduled|count|menuAria)" -CaseSensitive:$false | ForEach-Object { $_.LineNumber.ToString() + ": " + $_.Line }

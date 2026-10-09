@@ -1,0 +1,407 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+ * Design tokens — verified against Figma file 57Swiq5hGpHTzsg3hVgmlR
+ * (Dashboard frame 10:3868, etc.). All values match the design.
+ *
+ * Tailwind v4 reads `--color-*`, `--font-*`, `--text-*`, `--radius-*`,
+ * `--shadow-*` from the `@theme` block and exposes them as utilities.
+ * --------------------------------------------------------------------------- */
+
+:root {
+  /* Light surface palette */
+  --bg: #fafaf8;
+  --surface: #ffffff;
+  --border: #e8e6e1;
+  --text: #14181f;
+  --muted: #6b7280;
+  --placeholder: #939a95;
+
+  /* Brand */
+  --brand-600: #1f7a5c;
+  --brand-700: #176348;
+  --brand-50: #eaf5ef;
+  --brand-ring: rgba(31, 122, 92, 0.09);
+
+  /* Neutrals */
+  --avatar-bg: #e9ebf0;
+  --neutral-50: #f1f3ef;
+  --disabled-bg: #f3f4f1;
+  --disabled-text: #a6aca7;
+  --switch-off: #d6dbd6;
+
+  /* Status badges */
+  --status-pending-bg: #fff4dd;
+  --status-pending-text: #9a681d;
+  --status-overdue-bg: #fcedeb;
+  --status-overdue-text: #b64c46;
+  --status-paid-bg: #eaf5ef;
+  --status-paid-text: #1f7a5c;
+
+  /* Toast + scrim */
+  --toast-positive-border: #c7dbce;
+  --scrim: rgba(20, 24, 31, 0.4);
+
+  /* Border used by selected chips on light surfaces */
+  --chip-selected-border: #bcd9cb;
+
+  /* Border used for overdue summary card tint */
+  --status-overdue-border: #f1d5d0;
+
+  /* Type families — bound to next/font CSS vars defined in layout.tsx.
+   * One font family for the whole app: DM Sans (latin) with Noto Sans
+   * Bengali as the fallback for Bangla script + the ৳ glyph. */
+  --font-sans: var(--font-dm-sans), var(--font-noto-bengali), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-dm-sans), var(--font-noto-bengali), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Dark mode overrides — .dark class is toggled by next-themes on <html> */
+.dark {
+  --bg: #111a18;
+  --surface: #1b2723;
+  --border: #304139;
+  --text: #eff5f1;
+  --muted: #a8b8ae;
+  --placeholder: #a8b8ae;
+
+  --brand-600: #8ad4af;
+  --brand-50: #294d3d;
+  --brand-ring: rgba(138, 212, 175, 0.18);
+
+  --avatar-bg: #304139;
+  --neutral-50: #1b2723;
+  --disabled-bg: #1b2723;
+  --disabled-text: #6a7a70;
+  --switch-off: #304139;
+
+  --status-pending-bg: rgba(154, 104, 29, 0.18);
+  --status-pending-text: #f1c784;
+  --status-overdue-bg: rgba(182, 76, 70, 0.18);
+  --status-overdue-text: #f3a39e;
+  --status-paid-bg: rgba(31, 122, 92, 0.18);
+  --status-paid-text: #8ad4af;
+
+  --toast-positive-border: #294d3d;
+  --scrim: rgba(0, 0, 0, 0.55);
+
+  --status-overdue-border: rgba(182, 76, 70, 0.35);
+}
+
+/* ---------------------------------------------------------------------------
+ * Expose tokens as Tailwind theme tokens.
+ * --------------------------------------------------------------------------- */
+
+@theme inline {
+  /* Colors — every `bg-foo`, `text-foo`, `border-foo` utility resolves here. */
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-placeholder: var(--placeholder);
+
+  --color-brand-600: var(--brand-600);
+  --color-brand-700: var(--brand-700);
+  --color-brand-50: var(--brand-50);
+  --color-brand-ring: var(--brand-ring);
+
+  --color-avatar-bg: var(--avatar-bg);
+  --color-neutral-50: var(--neutral-50);
+  --color-disabled-bg: var(--disabled-bg);
+  --color-disabled-text: var(--disabled-text);
+  --color-switch-off: var(--switch-off);
+
+  --color-status-pending-bg: var(--status-pending-bg);
+  --color-status-pending-text: var(--status-pending-text);
+  --color-status-overdue-bg: var(--status-overdue-bg);
+  --color-status-overdue-text: var(--status-overdue-text);
+  --color-status-overdue-border: var(--status-overdue-border);
+  --color-status-paid-bg: var(--status-paid-bg);
+  --color-status-paid-text: var(--status-paid-text);
+
+  --color-toast-positive-border: var(--toast-positive-border);
+  --color-scrim: var(--scrim);
+  --color-chip-selected-border: var(--chip-selected-border);
+
+  /* Font families — one face for the whole app. The `--font-display`
+   * token points at the same stack as `--font-sans` so any legacy
+   * `font-display` utility still renders in DM Sans / Noto Sans
+   * Bengali instead of disappearing. */
+  --font-sans: var(--font-dm-sans), var(--font-noto-bengali), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-dm-sans), var(--font-noto-bengali), ui-sans-serif, system-ui, sans-serif;
+
+  /* Type scale — single shared scale for the whole app. Every page
+   * and component reads from one of these tokens; do not introduce
+   * ad-hoc `text-[..px]` or `font-bold` outside this list.
+   *
+   * Default values are desktop. The mobile (< 640px) overrides at
+   * the bottom of this file bump headings down a notch while
+   * keeping body / helper / label / badge / eyebrow at the same
+   * size — the only step-downs are the headings, summaries, and
+   * the landing / legal / loan-price display sizes. */
+  --text-display: 56px;
+  --text-display--line-height: 1.1;
+  --text-display--letter-spacing: -0.02em;
+
+  --text-h1: 32px;
+  --text-h1--line-height: 1.2;
+  --text-h1--letter-spacing: -0.02em;
+
+  --text-h2: 36px;
+  --text-h2--line-height: 1.2;
+  --text-h2--letter-spacing: -0.02em;
+
+  --text-section-h2: 36px;
+  --text-section-h2--line-height: 1.2;
+  --text-section-h2--letter-spacing: -0.02em;
+
+  --text-auth-heading: 28px;
+  --text-auth-heading--line-height: 1.2;
+  --text-auth-heading--letter-spacing: -0.02em;
+
+  --text-legal-h1: 36px;
+  --text-legal-h1--line-height: 1.2;
+  --text-legal-h1--letter-spacing: -0.02em;
+
+  --text-legal-body: 15px;
+  --text-legal-body--line-height: 1.7;
+
+  --text-price: 40px;
+  --text-price--line-height: 1.2;
+  --text-price--letter-spacing: -0.02em;
+
+  --text-summary: 26px;
+  --text-summary--line-height: 1.4;
+  --text-summary--letter-spacing: -0.01em;
+
+  --text-modal-heading: 20px;
+  --text-modal-heading--line-height: 1.3;
+
+  --text-subtitle: 15px;
+  --text-subtitle--line-height: 1.5;
+
+  --text-list-title: 17px;
+  --text-list-title--line-height: 1.4;
+
+  --text-card-heading: 18px;
+  --text-card-heading--line-height: 1.4;
+
+  --text-nav: 17px;
+  --text-nav--line-height: 1.5;
+
+  --text-body: 14px;
+  --text-body--line-height: 1.5;
+
+  --text-label: 13px;
+  --text-label--line-height: 1.5;
+
+  --text-helper: 12px;
+  --text-helper--line-height: 1.5;
+
+  --text-badge: 11px;
+  --text-badge--line-height: 1.5;
+
+  --text-eyebrow: 11px;
+  --text-eyebrow--line-height: 1.5;
+  --text-eyebrow--letter-spacing: 0.08em;
+
+  --text-chart: 11px;
+  --text-chart--line-height: 1.4;
+
+  --text-tooltip: 12px;
+  --text-tooltip--line-height: 1.4;
+
+  /* Radii */
+  --radius-sm: 9px;
+  --radius-md: 10px;
+  --radius-input: 12px;
+  --radius-card: 16px;
+  --radius-bubble: 24px;
+  --radius-pill: 100px;
+
+  /* Shadows — base light values; `.dark` overrides below. */
+  --shadow-card: 0 4px 20px rgba(20, 37, 26, 0.03);
+  --shadow-focus: 0 0 0 3px rgba(31, 122, 92, 0.09);
+  --shadow-overlay: 0 8px 32px rgba(20, 37, 26, 0.09);
+}
+
+.dark {
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.45);
+  --shadow-focus: 0 0 0 3px rgba(138, 212, 175, 0.18);
+  --shadow-overlay: 0 8px 32px rgba(0, 0, 0, 0.55);
+}
+
+/* Mobile (< 640px) overrides — only the headings, summaries, and
+ * display sizes step down. Body / helper / label / badge / eyebrow
+ * stay the same so form density doesn't shift between viewports. */
+@media (max-width: 640px) {
+  :root {
+    --text-display: 36px;
+    --text-h1: 28px;
+    --text-h2: 28px;
+    --text-section-h2: 28px;
+    --text-auth-heading: 24px;
+    --text-legal-h1: 28px;
+    --text-summary: 24px;
+    --text-price: 32px;
+    --text-card-heading: 17px;
+    --text-list-title: 16px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Element defaults
+ * --------------------------------------------------------------------------- */
+
+html,
+body {
+  height: 100%;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background-color: var(--brand-50);
+  color: var(--brand-600);
+}
+
+/* Visible focus ring uses brand color */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+  border-radius: var(--radius-input);
+}
+
+/* ---------------------------------------------------------------------------
+ * Form + SVG text reset
+ *
+ * Browsers apply their own UI font to form controls, which can desync
+ * the rest of the page. Force them to inherit the body font (DM Sans)
+ * so a focused input, the language switcher, the date-picker popover,
+ * and the SMS / email preview all match the page exactly. SVG <text>
+ * (e.g. the reports chart) inherits the same way.
+ * --------------------------------------------------------------------------- */
+
+button,
+input,
+textarea,
+select,
+option,
+optgroup,
+label,
+svg text {
+  font-family: inherit;
+  font-size: inherit;
+  letter-spacing: inherit;
+}
+
+/* Honour the OS-level reduced-motion preference. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Tabular numerals
+ *
+ * `tabular-nums` aligns digits so ৳45,000 lines up cleanly with
+ * ৳12,500 in tables, summary cards, and any other place that lists
+ * amounts side by side. Apply via `tabular` on the element that
+ * contains the money.
+ * --------------------------------------------------------------------------- */
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+}
+
+/* ---------------------------------------------------------------------------
+ * Type scale utility classes
+ *
+ * The token names (`text-h1`, `text-body`, `text-label`, …) only set
+ * font-size and line-height via the @theme block above. Anything that
+ * also needs weight / transform / letter-spacing is here as a small
+ * utility so every call site stays consistent.
+ * ------------------------------------------------------------------------- */
+
+/* Eyebrow / overline: 11px, weight 500, uppercase, +0.08em, muted.
+ * Reads as a small "section tag" above a page title. Bangla
+ * characters don't have an uppercase form, so the `text-transform:
+ * uppercase` is a no-op for them but harmless. */
+.eyebrow {
+  font-size: var(--text-eyebrow);
+  line-height: var(--text-eyebrow--line-height);
+  letter-spacing: var(--text-eyebrow--letter-spacing);
+  font-weight: 500;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Chart axis ticks and legends: 11px tabular numerals, muted. */
+.chart-text {
+  font-size: var(--text-chart);
+  line-height: var(--text-chart--line-height);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tooltip body inside SVG charts: 12px, slightly heavier so labels
+ * pop against the white card. */
+.chart-tooltip {
+  font-size: var(--text-tooltip);
+  line-height: var(--text-tooltip--line-height);
+}
+
+/* ---------------------------------------------------------------------------
+ * Mobile navigation drawer
+ *
+ * The drawer (mobile/tablet < lg) animates in from the left. We key
+ * off `data-state="open"` / `data-state="closed"` (set on the
+ * container) and animate two children:
+ *   - `.nav-drawer-scrim`  fades opacity 0 → 1
+ *   - `.nav-drawer-panel`  slides translateX(-100%) → translateX(0)
+ *
+ * When the container unmounts entirely (drawer is closed) it does
+ * not animate; the open transition is the only motion we ship.
+ *
+ * `prefers-reduced-motion: reduce` swaps the slide for a fade.
+ * --------------------------------------------------------------------------- */
+
+@keyframes nav-drawer-scrim-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes nav-drawer-panel-in {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(0); }
+}
+
+[data-state="open"] > .nav-drawer-scrim {
+  animation: nav-drawer-scrim-in 200ms ease-out both;
+}
+[data-state="open"] > .nav-drawer-panel {
+  animation: nav-drawer-panel-in 220ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-state="open"] > .nav-drawer-scrim,
+  [data-state="open"] > .nav-drawer-panel {
+    animation: nav-drawer-scrim-in 120ms linear both;
+  }
+}

@@ -1,0 +1,1 @@
+export { SEED_LOANS } from "./loans";
