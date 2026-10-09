@@ -378,6 +378,48 @@ export interface Dictionary {
   "notif.reminderSent.body": (tone: unknown, channel: unknown) => string;
   "notif.reminderSent.title": string;
 
+  // ── errors.api — REST API error envelopes (B4) ─────────────────────
+  "errors.api.unauthorized": string;
+  "errors.api.forbidden": string;
+  "errors.api.not_found": string;
+  "errors.api.conflict": string;
+  "errors.api.rate_limited": string;
+  "errors.api.server_error": string;
+  "errors.api.invalid_json": string;
+  "errors.api.validation_error": string;
+  "errors.api.unique_violation": string;
+  "errors.api.loan_not_found": string;
+  "errors.api.friend_not_found": string;
+  "errors.api.payment_not_found": string;
+  "errors.api.amount_invalid": string;
+  "errors.api.amount_too_small": string;
+  "errors.api.amount_too_large": string;
+  "errors.api.phone_invalid": string;
+  "errors.api.given_date_invalid": string;
+  "errors.api.due_date_invalid": string;
+  "errors.api.due_before_given": string;
+  "errors.api.due_not_after_today": string;
+  "errors.api.due_date_unchanged": string;
+  "errors.api.consent_required": string;
+  "errors.api.no_channel_enabled": string;
+  "errors.api.friend_opted_out": string;
+  "errors.api.loan_already_paid": string;
+  "errors.api.payment_overflow": string;
+  "errors.api.payment_date_future": string;
+  "errors.api.payment_date_before_given": string;
+  "errors.api.restore_window_expired": string;
+  "errors.api.reminder_cooldown": string;
+  "errors.api.due_date_change_not_allowed": string;
+  "errors.api.method_invalid": string;
+  "errors.api.tone_invalid": string;
+  "errors.api.language_invalid": string;
+  "errors.api.timing_invalid": string;
+  "errors.api.pagination_invalid": string;
+  "errors.api.notification_not_found": string;
+  "errors.api.empty_patch": string;
+  "errors.api.template_too_long": string;
+  "errors.api.unknown_placeholder": string;
+
   // ── notifications ───────────────────────────────────────────────────
   "notifications.aria.unread": string;
   "notifications.earlier": string;

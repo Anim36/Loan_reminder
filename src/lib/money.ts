@@ -27,3 +27,10 @@ export function poishaToTaka(poisha: number): number {
   if (!Number.isFinite(poisha)) return 0;
   return poisha / POISHA_PER_TAKA;
 }
+
+/** Round a taka value to 2 decimal places (the contract maximum).
+ *  Used when the DB hands us a poisha amount converted back to
+ *  taka, to strip floating-point noise like `12.500000000002`. */
+export function roundTaka(poisha: number): number {
+  return Math.round(poishaToTaka(poisha) * POISHA_PER_TAKA) / POISHA_PER_TAKA;
+}

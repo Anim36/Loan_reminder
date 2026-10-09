@@ -115,6 +115,11 @@ model User {
   language          UiLanguage @default(en)
   theme             ThemeChoice @default(light)
   banglaNumerals    Boolean   @default(false)
+  /// User-level notification preferences. Added in B5; the
+  /// defaults match the prototype's behaviour.
+  emailOnPaid       Boolean   @default(true)
+  emailOnOverdue    Boolean   @default(true)
+  weeklySummary     Boolean   @default(false)
   createdAt         DateTime  @default(now()) @db.Timestamptz(6)
 
   accounts           Account[]
